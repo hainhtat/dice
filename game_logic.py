@@ -72,7 +72,7 @@ class DiceGame:
         # Check if player has sufficient points
         if player["score"] < amount:
             logger.warning(f"place_bet: User {user_id} (score: {player['score']}) tried to bet {amount} with insufficient points in chat {self.chat_id}.")
-            return False, f"❌ ရမှတ်မလုံလောက်ပါ။ သင့်တွင် *{player['score']}* မှတ်သာ ရှိသည်။" # Insufficient points! You only have {score} points.
+            return False, f"❌ @{player}ရမှတ်မလုံလောက်ပါ။ သင့်တွင် *{player['score']}* မှတ်သာ ရှိသည်။" # Insufficient points! You only have {score} points.
 
         # Deduct the new bet amount from the player's score
         player["score"] -= amount
