@@ -5,14 +5,13 @@ import logging
 # Configure logging for this module
 logger = logging.getLogger(__name__)
 
-# --- REVERTED: Import global_data and INITIAL_PLAYER_SCORE from constants.py (no Firestore functions) ---
+# Import global_data and INITIAL_PLAYER_SCORE from constants.py
 from constants import global_data, RESULT_EMOJIS, INITIAL_PLAYER_SCORE
-# --- END REVERTED ---
 
 # Game states
 WAITING_FOR_BETS, GAME_CLOSED, GAME_OVER = range(3)
 
-# --- REVERTED: Helper function to get or initialize chat-specific data (NOW RE-ENABLED for in-memory) ---
+# Helper function to get or initialize chat-specific data (NOW RE-ENABLED for in-memory)
 def get_chat_data_for_id(chat_id):
     """
     Ensures the data structure for a given chat_id exists within global_data['all_chat_data']
@@ -29,7 +28,6 @@ def get_chat_data_for_id(chat_id):
     chat_specific_data.setdefault("match_history", [])
     chat_specific_data.setdefault("group_admins", []) # Ensure group_admins is always a list
     return chat_specific_data
-# --- END REVERTED ---
 
 class DiceGame:
     """
@@ -40,29 +38,28 @@ class DiceGame:
         self.match_id = match_id
         self.chat_id = chat_id # Store chat_id for logging and context
         # Stores active bets: {bet_type: {user_id: total_amount_bet_on_this_type}}
-        self.bets = {"big": {}, "small": {}, "lucky": {}}
+        self.bets = {"big": {}, "small": {}, "lucky": {}} 
         self.state = WAITING_FOR_BETS # Current state of the game match
         self.result = None # Stores the dice roll result (sum of two dice)
         self.start_time = datetime.now() # Timestamp when the game started
         self.participants = set() # Set of user_ids who have placed at least one bet in this match
         logger.info(f"DiceGame __init__: Match {self.match_id} started in chat {self.chat_id}")
 
-    # --- REVERTED: Removed get_player_stats_from_firestore and update_player_stats_in_firestore ---
-    # These functions are no longer needed as data is stored in-memory.
-    # --- END REVERTED ---
-
-    def place_bet(self, user_id, username, bet_type, amount): # Reverted to synchronous, removed chat_id param (use self.chat_id)
+    # --- UPDATED: Removed chat_id from place_bet arguments ---
+    def place_bet(self, user_id, username, bet_type, amount): 
         """
         Allows a user to place a bet on a specific bet type.
+        Uses self.chat_id to access chat-specific data.
         Users can now place multiple bets on different types, or add to existing bets.
         """
-        chat_specific_data = get_chat_data_for_id(self.chat_id) # Use get_chat_data_for_id
+        # Use self.chat_id directly as it's already available in the instance
+        chat_specific_data = get_chat_data_for_id(self.chat_id) 
         player_stats = chat_specific_data["player_stats"] # Access player_stats from chat_specific_data
 
         # Ensure player entry exists for the user; initialize with default score if new
         player = player_stats.setdefault(user_id, {
             "username": username,
-            "score": INITIAL_PLAYER_SCORE,
+            "score": INITIAL_PLAYER_SCORE, # Use INITIAL_PLAYER_SCORE
             "wins": 0,
             "losses": 0,
             "last_active": datetime.now()
@@ -73,6 +70,7 @@ class DiceGame:
             logger.warning(f"place_bet: User {user_id} tried to bet an invalid amount ({amount}) in chat {self.chat_id}.")
             return False, "❌ Bet amount must be positive!"
         
+        # New: Minimum bet limit check
         MIN_BET_AMOUNT = 100
         if amount < MIN_BET_AMOUNT:
             logger.warning(f"place_bet: User {user_id} tried to bet {amount} which is below minimum bet {MIN_BET_AMOUNT} in chat {self.chat_id}.")
@@ -101,6 +99,7 @@ class DiceGame:
             f"Your total bet on *{bet_type.upper()}*: *{self.bets[bet_type][user_id]}* points.\n"
             f"Your current score: *{player['score']}*."
         )
+    # --- END UPDATED ---
 
     def determine_winner(self):
         """Determines the winning bet type based on the dice roll result."""
@@ -111,7 +110,7 @@ class DiceGame:
         else:
             return "small" # Less than 7
 
-    def payout(self): # Reverted to synchronous, removed chat_id from params (use self.chat_id)
+    def payout(self, chat_id):
         """
         Distributes points to winners and updates player stats (wins/losses).
         Handles multiple bets per user.
@@ -120,15 +119,16 @@ class DiceGame:
         winning_bets = self.bets.get(winner_type, {}) # Get bets for the winning type
         multiplier = 5 if winner_type == "lucky" else 2 # Payout multiplier
 
-        chat_specific_data = get_chat_data_for_id(self.chat_id) # Use get_chat_data_for_id
-        stats = chat_specific_data["player_stats"] # Access player_stats for the chat
-        match_history = chat_specific_data["match_history"] # Access match_history for the chat
+        stats = get_chat_data_for_id(chat_id)["player_stats"] # Get player stats for the chat
+        match_history = get_chat_data_for_id(chat_id)["match_history"] # Get match_history for the chat
 
         # Check if any bets were placed at all in this specific game instance
         any_bets_placed = any(bool(bet_type_dict) for bet_type_dict in self.bets.values())
 
         if not any_bets_placed:
-            logger.info(f"payout: No bets placed for match {self.match_id} in chat {self.chat_id}. Skipping score adjustments for players.")
+            # If no bets were placed for this game (likely an automatic match),
+            # we just record the match history and don't process player scores.
+            logger.info(f"payout: No bets placed for match {self.match_id} in chat {chat_id}. Skipping score adjustments for players.")
             # Record match details in history, but with no participants if no one actually bet
             match_history.append({
                 "match_id": self.match_id,
@@ -143,7 +143,9 @@ class DiceGame:
 
         # Proceed with normal payout if bets were placed
         if not stats:
-            logger.warning(f"payout: No player stats found for chat {self.chat_id} during payout for match {self.match_id}, despite bets being present. This might indicate an issue with player data initialization.")
+            # This warning should now only appear if bets were placed but no global stats exist,
+            # which is an unusual state if the bot is running correctly.
+            logger.warning(f"payout: No player stats found for chat {chat_id} during payout for match {self.match_id}, despite bets being present. This might indicate an issue with player data initialization.")
             return winner_type, multiplier, {} 
 
         # Keep track of individual payouts for the message
@@ -159,11 +161,15 @@ class DiceGame:
                 individual_payouts[uid] = winnings # Store for message
                 logger.info(f"payout: User {uid} won {winnings} in match {self.match_id}. New score: {stats[uid]['score']}")
             else:
-                logger.warning(f"payout: Winning user {uid} not found in player stats for chat {self.chat_id} during payout.")
+                logger.warning(f"payout: Winning user {uid} not found in player stats for chat {chat_id} during payout.")
 
         # Process losers: Update loss count for those who bet on non-winning types
+        # A user might have bet on multiple types, including the winning one.
+        # We only count a loss if ALL their bets were on losing types.
         for uid in self.participants:
-            if uid not in winning_bets: # If user didn't have any winning bets
+            # Check if this user had any winning bets
+            if uid not in winning_bets:
+                # If not, check if they had any bets at all (i.e., they participated and lost)
                 total_bet_by_user = sum(self.bets[bt].get(uid, 0) for bt in self.bets)
                 if total_bet_by_user > 0 and uid in stats:
                     stats[uid]["losses"] += 1
@@ -171,7 +177,7 @@ class DiceGame:
 
 
         # Record match details in history
-        match_history.append({ # Append to chat-specific match_history
+        match_history.append({
             "match_id": self.match_id,
             "result": self.result,
             "winner": winner_type,

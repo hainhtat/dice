@@ -110,14 +110,14 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"start: Received /start command from user {user_id} in chat {chat_id}")
 
     await update.message.reply_text(
-        "🌟🎲 *Rangoon Dice Showdown မှ ကြိုဆိုပါတယ်ဗျို့!* �🌟\n\n"
+        "🌟🎲 *Rangoon Dice Showdown မှ ကြိုဆိုပါတယ်ဗျို့!* 🎉🌟\n\n"
         "ကဲ... ဘယ်သူ့ကံက အသားဆုံးလဲ စိန်ခေါ်လိုက်ရအောင်! ကစားနည်းလေးကတော့:\n\n"
         "✨ *ဂိမ်းစည်းမျဉ်းတွေ* က ရိုးရှင်းပါတယ်။ အန်စာတုံး ၂ လုံးလှိမ့်ပြီး ပေါင်းလဒ်ကို ခန့်မှန်းရုံပဲ!\n"
         "  - *BIG* 🔼: ၇ ထက်ကြီးရင် (၂ ဆ ပြန်ရမယ်နော်!)\n"
         "  - *SMALL* 🔽: ၇ ထက်ငယ်ရင် (ဒါလည်း ၂ ဆ ပြန်ရမယ်!)\n"
         "  - *LUCKY* 🍀: အတိအကျ ၇ ထွက်ရင် (ဒါဆို ၅ ဆတောင် ပြန်ရမှာ!)\n\n"
         "💰 *ဘယ်လိုလောင်းမလဲ:*\n"
-        "  - လောင်းကြေးထပ်ချိန် (အမှတ် ၁၀၀ က စပြီး) အတွင်း ခလုတ်လေးတွေနှိပ်ပြီး လောင်းလို့ရတယ်။\n"
+        "  - လောင်းကြေးထပ်ချိန် (အမှတ် ၁၀၀ က စပြီး) အတွင်း ခလုတ်လေးတွေနှိပ်ပါ။\n"
         "  - ဒါမှမဟုတ် စာနဲ့ရိုက်ပြီး လောင်းချင်ရင်: `/b <ပမာဏ>`, `/s <ပမာဏ>`, `/l <ပမာဏ>` လို့ ရိုက်ရမယ်နု့်!\n"
         "    (ဥပမာ: `big 500` (သို့) `small100` (သို့) `lucky 250`)\n"
         "  _မှတ်ထားနော်! တစ်ပွဲတည်းမှာ မတူညီတဲ့ ရလဒ်တွေပေါ် အကြိမ်ကြိမ် လောင်းကြေးထပ်လို့ရတယ်နော်။_ \n\n"
@@ -130,7 +130,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "  - /startdice: အန်စာတုံးပွဲအသစ် စတင်မယ်ဆိုရင်။\n"
         "  - /adjustscore <user\\_id> <amount>: ကစားသမားတစ်ယောက်ရဲ့ ရမှတ်ကို ထပ်ပေးတာ/နုတ်တာ လုပ်ချင်ရင်။\n"
         "  - /checkscore <user\\_id or @username>: ကစားသမားတစ်ယောက်ရဲ့ ရမှတ်နဲ့ အသေးစိတ်အချက်အလက်တွေ စစ်ချင်ရင်။\n"
-        "  - /stop: လက်ရှိဂိမ်းကို ရပ်ပြီး လောင်းထားတဲ့အမှတ်တွေကို ပြန်အမ်းချင်ရင်။\n\n"
+        "  - /stop: လက်ရှိဂိမ်းကို ရပ်ပြီး လောင်းထားတဲ့အမှတ်တွေကို ပြန်အမ်းပါ။\n\n" # Added /stop to instructions
         "ကံတရားက သင့်ဘက်မှာ အမြဲရှိနေပါစေ! 😉",
         parse_mode="Markdown"
     )
@@ -378,7 +378,7 @@ async def close_bets_scheduled(context: ContextTypes.DEFAULT_TYPE):
     # Store the job for potential cancellation
     roll_and_announce_job = context.job_queue.run_once(
         roll_and_announce_scheduled,
-        10, # seconds from now
+        30, # seconds from now
         chat_id=chat_id,
         data=game,
         name=f"roll_and_announce_{chat_id}_{game.match_id}" # Give job a unique name for cancellation
@@ -555,8 +555,9 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     bet_type = data.split("_")[1]
     
-    # Call synchronous place_bet on game instance with chat_id
-    success, response_message = game.place_bet(user_id, username, bet_type, 100, chat_id)
+    # --- FIXED: Call synchronous place_bet on game instance WITHOUT chat_id ---
+    success, response_message = game.place_bet(user_id, username, bet_type, 100) # Removed chat_id
+    # --- END FIXED ---
     
     await query.message.reply_text(response_message, parse_mode="Markdown")
     logger.info(f"button_callback: User {user_id} placed bet via button: {bet_type} (100 pts) in chat {chat_id}. Success: {success}")
@@ -627,8 +628,9 @@ async def handle_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # This error should ideally be caught by the regex already (digits only)
         return await update.message.reply_text(f"❌ @{username_escaped} ရေ၊ လောင်းကြေးပမာဏက ဂဏန်းဖြစ်ရပါမယ်ဗျို့။", parse_mode="Markdown")
 
-    # Call synchronous place_bet on game instance with chat_id
-    success, msg = game.place_bet(user_id, username, bet_type, amount, chat_id)
+    # --- FIXED: Call synchronous place_bet on game instance WITHOUT chat_id ---
+    success, msg = game.place_bet(user_id, username, bet_type, amount) # Removed chat_id
+    # --- END FIXED ---
     
     await update.message.reply_text(msg, parse_mode="Markdown")
     logger.info(f"handle_bet: User {user_id} placed bet: {bet_type} {amount} pts in chat {chat_id}. Success: {success}")
@@ -804,7 +806,7 @@ async def adjust_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not is_admin(chat_id, requester_user_id):
         logger.warning(f"adjust_score: User {requester_user_id} is not an admin and tried to adjust score in chat {chat_id}.")
-        return await update.message.reply_text("❌ Admin တွေပဲ ကစားသမားရမှတ်တွေကို ချိန်ညှိခွင့်ရှိတယ်နော်။", parse_mode="Markdown")
+        return await update.message.reply_text("❌ Admin တွေပဲ ကစားသမားရမှတ်များကို ချိန်ညှိခွင့်ရှိတယ်နော်။", parse_mode="Markdown")
 
     target_user_id = None
     amount_to_adjust = None
@@ -864,7 +866,7 @@ async def adjust_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 target_user_id = int(first_arg)
             except ValueError:
                 return await update.message.reply_text(
-                    "❌ User ID (သို့) ပမာဏက မှားနေတယ်နော်။ ကျေးဇူးပြုပြီး: `/adjustscore <user_id> <ပမာဏ>` ဒါမှမဟုတ် `/adjustscore @username <ပမာဏ>` ကိုသုံးပါ။\n"
+                    "❌ User ID (သို့) ပမာဏက မှားနေတယ်နော်။ ကျေးဇူပြု၍: `/adjustscore <user_id> <ပမာဏ>` ဒါမှမဟုတ် `/adjustscore @username <ပမာဏ>` ကိုသုံးပါ။\n"
                     "ဥပမာ- `/adjustscore 123456789 500` ဒါမှမဟုတ် `/adjustscore @someuser 100`။",
                     parse_mode="Markdown"
                 )
@@ -1173,3 +1175,4 @@ async def stop_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(refund_message, parse_mode="Markdown")
     logger.info(f"stop_game: Match {current_game.match_id} successfully stopped and bets refunded in chat {chat_id}.")
+
