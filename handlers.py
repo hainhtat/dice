@@ -3,6 +3,7 @@ import asyncio # For async.sleep
 from datetime import datetime
 import random # For random.randint fallback in dice roll
 import re # Import the 're' module for regex operations
+from typing import Optional # Import Optional for type hinting
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes # Only ContextTypes is needed here from telegram.ext
@@ -135,18 +136,18 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# --- MODIFIED: _start_interactive_game_round now handles chat_id internally ---
-async def _start_interactive_game_round(context: ContextTypes.DEFAULT_TYPE):
+# --- MODIFIED: _start_interactive_game_round now accepts optional update ---
+async def _start_interactive_game_round(context: ContextTypes.DEFAULT_TYPE, update: Optional[Update] = None):
     """
     Helper function to initiate a single interactive game round.
     This logic is extracted to be reusable for both single /startdice and sequential games.
-    chat_id is now retrieved from context.job.chat_id (if a job) or context.effective_chat.id (if direct handler call).
+    chat_id is now retrieved from context.job.chat_id (if a job) or update.effective_chat.id (if direct handler call).
     """
     chat_id = None
     if context.job:
         chat_id = context.job.chat_id
-    elif context.effective_chat:
-        chat_id = context.effective_chat.id
+    elif update and update.effective_chat: # Check if update exists before accessing effective_chat
+        chat_id = update.effective_chat.id
     
     if chat_id is None:
         logger.error("Could not determine chat_id in _start_interactive_game_round. Aborting round.")
@@ -179,7 +180,7 @@ async def _start_interactive_game_round(context: ContextTypes.DEFAULT_TYPE):
         f"🔥 *ပွဲစဉ် #{match_id}: လောင်းကြေးဖွင့်ပါပြီ!* 🔥\n\n"
         "💰 BIG (>7), SMALL (<7), ဒါမှမဟုတ် LUCKY (အတိအကျ 7) တို့ပေါ် လောင်းကြေးထပ်လိုက်တော့!\n"
         "ခလုတ်လေးတွေနှိပ်ပြီး (အမှတ် ၁၀၀) လောင်းလို့ရသလို၊ `big 250`, `s 50`, `lucky100` လိုမျိုးလည်း ရိုက်ပြီး လောင်းနိုင်တယ်။\n"
-        "_တစ်ပွဲတည်းမှာ မတူညီတဲ့ ရလဒ်တွေပေါ် အကြိမ်ကြိမ် လောင်းကြေးထပ်လို့ရတယ်နော်။_ \n\n"
+        "_တစ်ပွဲတည်းမှာ မတူညီတဲ့ ရလဒ်တွေပေါ် အကြိမ်ကြိမ် လောင်းကြေးထပ်လို့ရတယ်နော်。_ \n\n"
         "⏳ လောင်းကြေးပိတ်ဖို့ *စက္ကန့် ၆၀* ပဲကျန်တော့မယ်! ကံတရားက ဘယ်သူ့ဘက်မှာလဲ ကြည့်ရအောင်!",
         parse_mode="Markdown", reply_markup=keyboard
     )
@@ -248,7 +249,7 @@ async def _manage_game_sequence(context: ContextTypes.DEFAULT_TYPE):
         await context.bot.send_message(
             chat_id,
             "🎉 *စီစဉ်ထားတဲ့ပွဲစဉ်တွေ အားလုံး ပြီးဆုံးသွားပြီဗျို့!* 🎉\n"
-            "ဘယ်သူတွေ ချမ်းသာသွားလဲဆိုတာ /leaderboard နဲ့ ကြည့်လိုက်တော့နော်။",
+            "ဘယ်သူတွေ ချမ်းသာသွားလဲဆိုတာ /leaderboard နဲ့ ကြည့်လိုက်တော့နော်。",
             parse_mode="Markdown"
         )
 
@@ -265,7 +266,7 @@ async def start_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Group ID check ---
     if chat_id not in ALLOWED_GROUP_IDS:
         logger.info(f"start_dice: Ignoring command from disallowed chat ID: {chat_id}")
-        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်။", parse_mode="Markdown")
+        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်。", parse_mode="Markdown")
         return
     # --- END Group ID check ---
 
@@ -310,7 +311,7 @@ async def start_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 return await update.message.reply_text("❌ တစ်ကြိမ်တည်းမှာ ဆက်တိုက်အန်စာတုံးပွဲ အပွဲ ၂၀ အထိပဲ စီစဉ်လို့ရပါတယ်။ ဒီထက်ပိုရင် နောက်မှ ဆက်ခေါ်လိုက်နော်။", parse_mode="Markdown")
         except ValueError:
             await update.message.reply_text(
-                "ℹ️ `/startdice` အတွက် မှားယွင်းတဲ့ ကိန်းဂဏန်းပါ။ စိတ်မပူပါနဲ့၊ တစ်ပွဲတည်း အန်စာတုံးပွဲ စတင်ပေးပါမယ်နော်။\n"
+                "ℹ️ `/startdice` အတွက် မှားယွင်းတဲ့ ကိန်းဂဏန်းပါ။ စိတ်မပူပါနဲ့၊ တစ်ပွဲတည်း အန်စာတုံးပွဲ စတင်ပေးပါမယ်နော်。\n"
                 "ဘယ်လိုသုံးရမလဲဆိုတော့: `/startdice` က တစ်ပွဲစတင်ဖို့၊ ဒါမှမဟုတ် `/startdice <အရေအတွက်>` ကတော့ ပွဲပေါင်းများစွာ ဆက်တိုက်ကစားဖို့ပါ။",
                 parse_mode="Markdown"
             )
@@ -335,8 +336,8 @@ async def start_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         chat_specific_context["sequence_job"] = sequence_job # Store the initial job
     else:
-        # --- MODIFIED: Call _start_interactive_game_round with only context, it will pick chat_id from effective_chat ---
-        await _start_interactive_game_round(context)
+        # --- MODIFIED: Call _start_interactive_game_round with update and context ---
+        await _start_interactive_game_round(context, update=update)
         # --- END MODIFIED ---
 
 
@@ -381,7 +382,7 @@ async def close_bets_scheduled(context: ContextTypes.DEFAULT_TYPE):
                 bet_summary_lines.append(f"    → @{username_display}: *{amount}* မှတ်")
     
     if not has_bets:
-        bet_summary_lines.append("  ဒီပွဲမှာ ဘယ်သူမှ မလောင်းထားဘူးဗျို့။ 🥺")
+        bet_summary_lines.append("  ဒီပွဲမှာ ဘယ်သူမှ မလောင်းထားဘူးဗျို့")
 
     bet_summary_lines.append("\nကဲ... အန်စာတုံးလေးတွေ လှိမ့်လိုက်တော့မယ်! 💥")
     
@@ -561,7 +562,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not game:
         logger.info(f"button_callback: User {user_id} ({username}) tried to bet via button but no game active in chat {chat_id}.")
         return await query.message.reply_text(
-            f"⚠️ @{username_escaped} ရေ၊ အန်စာတုံးဂိမ်းက မစရသေးပါဘူးဗျို့။ Admin တစ်ယောက်က /startdice နဲ့ ဂိမ်းစဖို့ လိုပါတယ်နော်။", 
+            f"⚠️ @{username_escaped} ရေ၊ အန်စာတုံးဂိမ်းက မစရသေးပါဘူးဗျို့။ Admin တစ်ယောက်က /startdice နဲ့ ဂိမ်းစဖို့ လိုပါတယ်နော်。", 
             parse_mode="Markdown"
         )
     
@@ -608,7 +609,7 @@ async def handle_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not game:
         logger.info(f"handle_bet: User {user_id} tried to place text bet but no game active in chat {chat_id}.")
         return await update.message.reply_text(
-            f"⚠️ @{username_escaped} ရေ၊ အန်စာတုံးဂိမ်းက မစရသေးပါဘူးဗျို့။ Admin တစ်ယောက်က /startdice နဲ့ ဂိမ်းစဖို့ လိုပါတယ်နော်။", 
+            f"⚠️ @{username_escaped} ရေ၊ အန်စာတုံးဂိမ်းက မစရသေးပါဘူးဗျို့။ Admin တစ်ယောက်က /startdice နဲ့ ဂိမ်းစဖို့ လိုပါတယ်နော်。", 
             parse_mode="Markdown"
         )
     
@@ -625,8 +626,8 @@ async def handle_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not bet_match:
         logger.warning(f"handle_bet: Invalid bet format for user {user_id} in message: '{message_text}' in chat {chat_id}.")
         return await update.message.reply_text(
-            f"❌ @{username_escaped} ရေ၊ လောင်းကြေးပုံစံက မှားနေတယ်ဗျို့။ `big 500`၊ `small 100`၊ `lucky 250` လိုမျိုး ရိုက်ပေးပါနော်။\n"
-            "ခလုတ်လေးတွေနှိပ်ပြီး လောင်းတာက ပိုလွယ်ပါတယ် (မူရင်း ၁၀၀ မှတ်နော်)။",
+            f"❌ @{username_escaped} ရေ၊ လောင်းကြေးပုံစံက မှားနေတယ်ဗျို့။ `big 500`၊ `small 100`၊ `lucky 250` လိုမျိုး ရိုက်ပေးပါနော်。\n"
+            "ခလုတ်လေးတွေနှိပ်ပြီး လောင်းတာက ပိုလွယ်ပါတယ် (မူရင်း ၁၀၀ မှတ်နော်)。",
             parse_mode="Markdown"
         )
     
@@ -644,7 +645,7 @@ async def handle_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
     except ValueError:
         logger.error(f"handle_bet: Failed to convert bet amount to integer from user {user_id}: '{amount_str}' in chat {chat_id}.")
         # This error should ideally be caught by the regex already (digits only)
-        return await update.message.reply_text(f"❌ @{username_escaped} ရေ၊ လောင်းကြေးပမာဏက ဂဏန်းဖြစ်ရပါမယ်ဗျို့။", parse_mode="Markdown")
+        return await update.message.reply_text(f"❌ @{username_escaped} ရေ၊ လောင်းကြေးပမာဏက ဂဏန်းဖြစ်ရပါမယ်ဗျို့。", parse_mode="Markdown")
 
     # Call synchronous place_bet on game instance WITHOUT chat_id
     success, msg = game.place_bet(user_id, username, bet_type, amount) # Removed chat_id
@@ -661,7 +662,7 @@ async def show_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Group ID check ---
     if chat_id not in ALLOWED_GROUP_IDS:
         logger.info(f"show_score: Ignoring command from disallowed chat ID: {chat_id}")
-        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်။", parse_mode="Markdown")
+        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်。", parse_mode="Markdown")
         return
     # --- END Group ID check ---
 
@@ -695,7 +696,7 @@ async def show_stats(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Group ID check ---
     if chat_id not in ALLOWED_GROUP_IDS:
         logger.info(f"show_stats: Ignoring command from disallowed chat ID: {chat_id}")
-        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်။", parse_mode="Markdown")
+        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်。", parse_mode="Markdown")
         return
     # --- END Group ID check ---
 
@@ -737,7 +738,7 @@ async def leaderboard(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Group ID check ---
     if chat_id not in ALLOWED_GROUP_IDS:
         logger.info(f"leaderboard: Ignoring command from disallowed chat ID: {chat_id}")
-        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်။", parse_mode="Markdown")
+        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်。", parse_mode="Markdown")
         return
     # --- END Group ID check ---
 
@@ -774,7 +775,7 @@ async def history(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Group ID check ---
     if chat_id not in ALLOWED_GROUP_IDS:
         logger.info(f"history: Ignoring command from disallowed chat ID: {chat_id}")
-        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်။", parse_mode="Markdown")
+        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်。", parse_mode="Markdown")
         return
     # --- END Group ID check ---
 
@@ -814,7 +815,7 @@ async def adjust_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Group ID check ---
     if chat_id not in ALLOWED_GROUP_IDS:
         logger.info(f"adjust_score: Ignoring command from disallowed chat ID: {chat_id}")
-        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်။", parse_mode="Markdown")
+        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်。", parse_mode="Markdown")
         return
     # --- END Group ID check ---
 
@@ -823,7 +824,7 @@ async def adjust_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not is_admin(chat_id, requester_user_id):
         logger.warning(f"adjust_score: User {requester_user_id} is not an admin and tried to adjust score in chat {chat_id}.")
-        return await update.message.reply_text("❌ Admin တွေပဲ ကစားသမားရမှတ်များကို ချိန်ညှိခွင့်ရှိတယ်နော်။", parse_mode="Markdown")
+        return await update.message.reply_text("❌ Admin တွေပဲ ကစားသမားရမှတ်များကို ချိန်ညှိခွင့်ရှိတယ်နော်。", parse_mode="Markdown")
 
     target_user_id = None
     amount_to_adjust = None
@@ -835,7 +836,7 @@ async def adjust_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message.reply_to_message:
         if not context.args or len(context.args) != 1:
             return await update.message.reply_text(
-                "❌ ပြန်ဖြေရာမှာ အသုံးပြုပုံ မှားနေတယ်နော်။ ကျေးဇူးပြုပြီး: `/adjustscore <ပမာဏ>` လို့ ရိုက်ပေးပါဦး။\n"
+                "❌ ပြန်ဖြေရာမှာ အသုံးပြုပုံ မှားနေတယ်နော်။ ကျေးဇူးပြုပြီး: `/adjustscore <ပမာဏ>` လို့ ရိုက်ပေးပါဦး。\n"
                 "ဥပမာ- ကစားသမားတစ်ယောက်ရဲ့ မက်ဆေ့ချ်ကို Reply လုပ်ပြီး `/adjustscore 500` (အမှတ် ၅၀၀ ထည့်ရန်) လို့ ရိုက်ပါ။",
                 parse_mode="Markdown"
             )
@@ -875,7 +876,7 @@ async def adjust_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if target_user_id is None: # User not found in local player_stats by username
                 return await update.message.reply_text(
-                    f"❌ အသုံးပြုသူ '@{mentioned_username}' ကို ဒီ chat ရဲ့ ဂိမ်းဒေတာထဲမှာ ရှာမတွေ့ဘူးဗျို့။ သူတို့က ဒီ bot နဲ့ ဒီ chat ထဲမှာ တစ်ခါမှ မကစားဖူးသေးတာ ဖြစ်နိုင်တယ်။ သူတို့ရဲ့ မက်ဆေ့ချ်တစ်ခုခုကို Reply လုပ်ကြည့်ပါ ဒါမှမဟုတ် သူတို့ရဲ့ User ID ဂဏန်းကို သုံးကြည့်ပါနော်။",
+                    f"❌ အသုံးပြုသူ '@{mentioned_username}' ကို ဒီ chat ရဲ့ ဂိမ်းဒေတာထဲမှာ ရှာမတွေ့ဘူးဗျို့။ သူတို့က ဒီ bot နဲ့ ဒီ chat ထဲမှာ တစ်ခါမှ မကစားဖူးသေးတာ ဖြစ်နိုင်တယ်။ သူတို့ရဲ့ မက်ဆေ့ချ်တစ်ခုခုကို Reply လုပ်ကြည့်ပါ ဒါမှမဟုတ် သူတို့ရဲ့ User ID ဂဏန်းကို သုံးကြည့်ပါနော်。",
                     parse_mode="Markdown"
                 )
         else: # Numeric user ID provided
@@ -900,7 +901,7 @@ async def adjust_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if target_user_id is None or amount_to_adjust is None:
         logger.error(f"adjust_score: Logic error: target_user_id ({target_user_id}) or amount_to_adjust ({amount_to_adjust}) is None after initial parsing. update_message: {update.message.text}")
-        return await update.message.reply_text("❌ မထင်မှတ်ထားတဲ့ အမှားလေးတစ်ခု ဖြစ်သွားတယ်ဗျို့။ ထပ်ကြိုးစားကြည့်ပါဦးနော်။", parse_mode="Markdown")
+        return await update.message.reply_text("❌ မထင်မှတ်ထားတဲ့ အမှားလေးတစ်ခု ဖြစ်သွားတယ်ဗျို့။ ထပ်ကြိုးစားကြည့်ပါဦးနော်。", parse_mode="Markdown")
 
     # Directly access and update in-memory player_stats
     target_player_stats = player_stats_for_chat.setdefault(target_user_id, { # Use setdefault to ensure it exists
@@ -929,7 +930,7 @@ async def adjust_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"adjust_score: Failed to fetch user details for {target_user_id} in chat {chat_id}: {e}", exc_info=True)
             return await update.message.reply_text(
-                f"❌ User ID `{target_user_id}` ရှိ ကစားသမားကို ဒီ chat မှာ ရှာမတွေ့ဘူးဗျို့။ Telegram က အသေးစိတ်အချက်အလက်တွေ ရယူလို့ မရတာ ဖြစ်နိုင်တယ်။ သူတို့က ဒီ group ထဲမှာ ရှိလား ဒါမှမဟုတ် သူတို့ရဲ့ မက်ဆေ့ချ်တစ်ခုကို Reply လုပ်ကြည့်ပါဦးနော်။",
+                f"❌ User ID `{target_user_id}` ရှိ ကစားသမားကို ဒီ chat မှာ ရှာမတွေ့ဘူးဗျို့။ Telegram က အသေးစိတ်အချက်အလက်တွေ ရယူလို့ မရတာ ဖြစ်နိုင်တယ်။ သူတို့က ဒီ group ထဲမှာ ရှိလား ဒါမှမဟုတ် သူတို့ရဲ့ မက်ဆေ့ချ်တစ်ခုကို Reply လုပ်ကြည့်ပါဦးနော်。",
                 parse_mode="Markdown"
             )
             
@@ -947,7 +948,7 @@ async def adjust_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username_display_escaped = target_username_display.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
 
     await update.message.reply_text(
-        f"✅ *@{username_display_escaped}* (အိုင်ဒီ: `{target_user_id}`) ရဲ့ ရမှတ်ကို *{amount_to_adjust}* မှတ် ချိန်ညှိပေးလိုက်ပါပြီဗျို့။\n" 
+        f"✅ *@{username_display_escaped}* (အိုင်ဒီ: `{target_user_id}`) ရဲ့ ရမှတ်ကို *{amount_to_adjust}* မှတ် ချိန်ညှိပေးလိုက်ပါပြီဗျို့。\n" 
         f"အရင်ရမှတ်: *{old_score}* | အခုရမှတ်အသစ်: *{new_score_val}*။ (ကဲ... အမှတ်တိုးပြီပေါ့! 😉)",
         parse_mode="Markdown"
     )
@@ -965,7 +966,7 @@ async def check_user_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Group ID check ---
     if chat_id not in ALLOWED_GROUP_IDS:
         logger.info(f"check_user_score: Ignoring command from disallowed chat ID: {chat_id}")
-        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်။", parse_mode="Markdown")
+        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်。", parse_mode="Markdown")
         return
     # --- END Group ID check ---
 
@@ -974,7 +975,7 @@ async def check_user_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not is_admin(chat_id, requester_user_id):
         logger.warning(f"check_user_score: User {requester_user_id} is not an admin and tried to check score in chat {chat_id}.")
-        return await update.message.reply_text("❌ Admin တွေပဲ တခြားကစားသမားတွေရဲ့ ရမှတ်တွေကို စစ်ဆေးခွင့်ရှိတယ်နော်။", parse_mode="Markdown")
+        return await update.message.reply_text("❌ Admin တွေပဲ တခြားကစားသမားတွေရဲ့ ရမှတ်တွေကို စစ်ဆေးခွင့်ရှိတယ်နော်。", parse_mode="Markdown")
 
     target_user_id = None
     target_username_display = None
@@ -1001,7 +1002,7 @@ async def check_user_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
             
             if target_user_id is None: # User not found in local player_stats by username
                 return await update.message.reply_text(
-                    f"❌ အသုံးပြုသူ '@{mentioned_username}' ကို ဒီ chat ရဲ့ ဂိမ်းဒေတာထဲမှာ ရှာမတွေ့ဘူးဗျို့။ သူတို့က ဒီ bot နဲ့ ဒီ chat ထဲမှာ တစ်ခါမှ မကစားဖူးသေးတာ ဖြစ်နိုင်တယ်။ သူတို့ရဲ့ မက်ဆေ့ချ်တစ်ခုခုကို Reply လုပ်ကြည့်ပါ ဒါမှမဟုတ် သူတို့ရဲ့ User ID ဂဏန်းကို သုံးကြည့်ပါနော်။",
+                    f"❌ အသုံးပြုသူ '@{mentioned_username}' ကို ဒီ chat ရဲ့ ဂိမ်းဒေတာထဲမှာ ရှာမတွေ့ဘူးဗျို့။ သူတို့က ဒီ bot နဲ့ ဒီ chat ထဲမှာ တစ်ခါမှ မကစားဖူးသေးတာ ဖြစ်နိုင်တယ်။ သူတို့ရဲ့ မက်ဆေ့ချ်တစ်ခုခုကို Reply လုပ်ကြည့်ပါ ဒါမှမဟုတ် သူတို့ရဲ့ User ID ဂဏန်းကို သုံးကြည့်ပါနော်。",
                     parse_mode="Markdown"
                 )
         else: # Numeric user ID provided
@@ -1026,7 +1027,7 @@ async def check_user_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if target_user_id is None:
         logger.error(f"check_user_score: Logic error: target_user_id ({target_user_id}) is None after initial parsing. update_message: {update.message.text}")
-        return await update.message.reply_text("❌ မထင်မှတ်ထားတဲ့ အမှားလေးတစ်ခု ဖြစ်သွားတယ်ဗျို့။ ထပ်ကြိုးစားကြည့်ပါဦးနော်။", parse_mode="Markdown")
+        return await update.message.reply_text("❌ မထင်မှတ်ထားတဲ့ အမှားလေးတစ်ခု ဖြစ်သွားတယ်ဗျို့။ ထပ်ကြိုးစားကြည့်ပါဦးနော်。", parse_mode="Markdown")
 
     # Fetch player stats from in-memory global_data for display
     player_stats = player_stats_for_chat.get(target_user_id)
@@ -1038,7 +1039,7 @@ async def check_user_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
             username_display_escaped = fetched_username.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
             
             await update.message.reply_text(
-                f"👤 *@{username_display_escaped}* (အိုင်ဒီ: `{target_user_id}`) အတွက် ဒီ chat မှာ ဂိမ်းစာရင်းအင်းတွေ မရှိသေးဘူးဗျို့။\n"
+                f"👤 *@{username_display_escaped}* (အိုင်ဒီ: `{target_user_id}`) အတွက် ဒီ chat မှာ ဂိမ်းစာရင်းအင်းတွေ မရှိသေးဘူးဗျို့。\n"
                 f"သူတို့ရဲ့ လက်ရှိရမှတ်ကတော့ အစကတည်းက ပေးထားတဲ့ *{INITIAL_PLAYER_SCORE}* မှတ်ပဲ ရှိပါသေးတယ်။",
                 parse_mode="Markdown"
             )
@@ -1048,7 +1049,7 @@ async def check_user_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
         except Exception as e:
             logger.error(f"check_user_score: Failed to find player {target_user_id} or fetch their details in chat {chat_id}: {e}", exc_info=True)
             return await update.message.reply_text(
-                f"❌ User ID `{target_user_id}` ရှိ ကစားသမားကို ဒီ chat မှာ ရှာမတွေ့ဘူးဗျို့။ Telegram က အသေးစိတ်အချက်အလက်တွေ ရယူလို့ မရတာ ဖြစ်နိုင်တယ်။ သူတို့က ဒီ group ထဲမှာ ရှိလား ဒါမှမဟုတ် သူတို့ရဲ့ မက်ဆေ့ချ်တစ်ခုကို Reply လုပ်ကြည့်ပါဦးနော်။",
+                f"❌ User ID `{target_user_id}` ရှိ ကစားသမားကို ဒီ chat မှာ ရှာမတွေ့ဘူးဗျို့။ Telegram က အသေးစိတ်အချက်အလက်တွေ ရယူလို့ မရတာ ဖြစ်နိုင်တယ်။ သူတို့က ဒီ group ထဲမှာ ရှိလား ဒါမှမဟုတ် သူတို့ရဲ့ မက်ဆေ့ချ်တစ်ခုကို Reply လုပ်ကြည့်ပါဦးနော်。",
                 parse_mode="Markdown"
             )
             
@@ -1083,7 +1084,7 @@ async def refresh_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # --- Group ID check ---
     if chat_id not in ALLOWED_GROUP_IDS:
         logger.info(f"refresh_admins: Ignoring command from disallowed chat ID: {chat_id}")
-        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်။", parse_mode="Markdown")
+        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်。", parse_mode="Markdown")
         return
     # --- END Group ID check ---
 
@@ -1092,15 +1093,15 @@ async def refresh_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
     # Allow hardcoded global admins to use this even if group_admins isn't yet populated
     if not is_admin(chat_id, user_id) and user_id not in HARDCODED_ADMINS:
         logger.warning(f"refresh_admins: User {user_id} tried to refresh admins in chat {chat_id} but is not an admin.")
-        return await update.message.reply_text("❌ Admin တွေပဲ အုပ်ချုပ်သူစာရင်းကို အသစ်ပြန်တင်လို့ရပါတယ်နော်။", parse_mode="Markdown")
+        return await update.message.reply_text("❌ Admin တွေပဲ အုပ်ချုပ်သူစာရင်းကို အသစ်ပြန်တင်လို့ရပါတယ်နော်。", parse_mode="Markdown")
 
     logger.info(f"refresh_admins: User {user_id} attempting to refresh admin list for chat {chat_id}.")
     
     if await update_group_admins(chat_id, context):
-        await update.message.reply_text("✅ အုပ်ချုပ်သူစာရင်းကို အောင်မြင်စွာ အသစ်ပြန်တင်ပြီးပါပြီ! ကဲ... ဘယ်သူတွေ ထပ်ပါလာလဲ ကြည့်လိုက်ဦးနော်။", parse_mode="Markdown")
+        await update.message.reply_text("✅ အုပ်ချုပ်သူစာရင်းကို အောင်မြင်စွာ အသစ်ပြန်တင်ပြီးပါပြီ! ကဲ... ဘယ်သူတွေ ထပ်ပါလာလဲ ကြည့်လိုက်ဦးနော်。", parse_mode="Markdown")
     else:
         await update.message.reply_text(
-            "❌ အုပ်ချုပ်သူစာရင်းကို အသစ်ပြန်တင်လို့မရပါဘူးဗျို့။ ကျွန်တော့်ကို 'ချတ်အုပ်ချုပ်သူများကို ရယူရန်' ခွင့်ပြုချက် ပေးထားလား သေချာစစ်ပေးပါဦးနော်။",
+            "❌ အုပ်ချုပ်သူစာရင်းကို အသစ်ပြန်တင်လို့မရပါဘူးဗျို့။ ကျွန်တော့်ကို 'ချတ်အုပ်ချုပ်သူများကို ရယူရန်' ခွင့်ပြုချက် ပေးထားလား သေချာစစ်ပေးပါဦးနော်。",
             parse_mode="Markdown"
         )
 
@@ -1113,7 +1114,7 @@ async def stop_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if chat_id not in ALLOWED_GROUP_IDS:
         logger.info(f"stop_game: Ignoring command from disallowed chat ID: {chat_id}")
-        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်။", parse_mode="Markdown")
+        await update.message.reply_text(f"ဆောရီးနော်၊ ကျွန်တော်က ဒီ group ({chat_id}) မှာ ကစားဖို့ ခွင့်ပြုချက်မရှိပါဘူး။ ခွင့်ပြုထားတဲ့ group ထဲ ထည့်ပေးပါဦးနော်。", parse_mode="Markdown")
         return
 
     user_id = update.effective_user.id
@@ -1122,7 +1123,7 @@ async def stop_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if not is_admin(chat_id, user_id):
         logger.warning(f"stop_game: User {user_id} is not an admin and tried to stop a game in chat {chat_id}.")
-        return await update.message.reply_text("❌ Admin တွေပဲ လက်ရှိဂိမ်းကို ရပ်တန့်လို့ရပါတယ်နော်။", parse_mode="Markdown")
+        return await update.message.reply_text("❌ Admin တွေပဲ လက်ရှိဂိမ်းကို ရပ်တန့်လို့ရပါတယ်နော်。", parse_mode="Markdown")
 
     chat_specific_context = context.chat_data.setdefault(chat_id, {})
     current_game = chat_specific_context.get("game")
