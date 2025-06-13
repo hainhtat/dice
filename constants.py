@@ -49,7 +49,8 @@ HARDCODED_ADMINS = [int(x) for x in HARDCODED_ADMINS if isinstance(x, str) and x
 # Define a list of allowed group IDs
 # IMPORTANT: Replace these with the actual chat IDs of your specific groups.
 ALLOWED_GROUP_IDS = [
-    -4859500151, # This is an example group ID, REPLACE WITH YOUR ACTUAL GROUP ID
+    -4859500151,
+    -1002689980361, # This is an example group ID, REPLACE WITH YOUR ACTUAL GROUP ID
     # -1009876543210,  # Example Group ID 2
     # Add more group IDs as needed
 ]
