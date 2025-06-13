@@ -38,7 +38,8 @@ def main():
     # The bot will now use in-memory data storage as before.
     # --- END REVERTED ---
 
-    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    bot_token = os.environ.get("TELEGRAM_BOT_TOKEN") #for production
+    # bot_token = "8187381656:AAHnNiWB0Z98uJ5qBvbaXCsNqHHOt1itlGg" for testing
     if not bot_token:
         logger.error("main: TELEGRAM_BOT_TOKEN environment variable not set!")
         raise ValueError("Bot token is not set. Please set the TELEGRAM_BOT_TOKEN environment variable.")
