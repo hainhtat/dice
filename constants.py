@@ -1,60 +1,53 @@
 import os
-from datetime import datetime # Import datetime for default values if needed
+import random
 
-# Initial score for new players
-INITIAL_PLAYER_SCORE = 0 # Default starting score for all new players.
-
-# Global data storage: This will now hold a dictionary where keys are chat_ids,
-# and values are dictionaries containing player_stats, match_history, group_admins,
-# and a chat-specific match_counter.
+# --- UPDATED: Centralized data structure for all chats ---
 global_data = {
-    "all_chat_data": {} # Dictionary to hold all per-chat data for game instances.
+    "all_chat_data": {} # Stores chat_id: {player_stats: {}, match_counter: int, match_history: [], group_admins: [], consecutive_idle_matches: 0}
 }
 
-# --- NEW FUNCTION: get_chat_data_for_id ---
 def get_chat_data_for_id(chat_id: int):
     """
-    Retrieves or initializes the chat-specific data dictionary from global_data.
-    This function centralizes access and ensures consistent initialization for each chat.
+    Retrieves or initializes the chat-specific data from global_data.
+    This ensures that each chat maintains its own game state, player scores, etc.
     """
     if chat_id not in global_data["all_chat_data"]:
         global_data["all_chat_data"][chat_id] = {
-            "match_counter": 1,
-            "player_stats": {},
-            "match_history": [],
-            "group_admins": []
+            "player_stats": {}, # Stores user_id: {username: str, score: int, wins: int, losses: int, last_active: datetime}
+            "match_counter": 1, # Unique ID for each match within a chat
+            "match_history": [], # Stores past match results
+            "group_admins": [], # Cached list of admin user_ids for this specific chat
+            "consecutive_idle_matches": 0 # New: Tracks idle matches for auto-stopping
         }
     return global_data["all_chat_data"][chat_id]
-# --- END NEW FUNCTION ---
+# --- END UPDATED ---
 
-
-# Hardcoded admin IDs (can be global for debugging or specific bot control)
-# It's recommended to store sensitive IDs in environment variables for production.
+# Hardcoded global administrators (Telegram User IDs)
+# These users will always have admin privileges regardless of specific group admin status.
+# Replace with actual user IDs for your global admins.
 HARDCODED_ADMINS = [
-    # Example: int(os.environ.get("ADMIN_USER_ID_1")),
-    # Add your personal Telegram User ID here for global admin access during testing
-    # e.g., 123456789,
+    1599213796,  # Replace with a real admin's User ID (e.g., your ID)
+    # Add more admin IDs here if needed
 ]
-# Filter out None values and ensure they are integers in case env vars are not set or are invalid
-HARDCODED_ADMINS = [int(x) for x in HARDCODED_ADMINS if isinstance(x, str) and x.isdigit() or isinstance(x, int)]
+
+# Allowed Group IDs
+# The bot will only function in these specific groups.
+# Replace with the actual Telegram Group IDs where you want the bot to run.
+# You can get a group's ID by forwarding a message from the group to @userinfobot
+ALLOWED_GROUP_IDS = [
+    -1002689980361,
+    -4859500151,
+]
 
 
-# Emojis for results
+# Initial score for new players
+INITIAL_PLAYER_SCORE = 1000
+
+# Emojis for results (optional, but adds flair!)
 RESULT_EMOJIS = {
-    "big": "🔼",
-    "small": "🔽",
-    "lucky": "🍀"
+    "big": "⬆️",
+    "small": "⬇️",
+    "lucky": "💎"
 }
 
-# --- NEW: Allowed Group IDs for the bot ---
-# IMPORTANT: Replace these with the actual integer IDs of the Telegram groups
-# where you want your bot to be active. You can get a group's ID by
-# - Sending /id to a bot like @userinfobot in your group, or
-# - Forwarding a message from the group to @JsonDumpBot, or
-# - Adding your bot to the group and checking its logs for the chat_id.
-ALLOWED_GROUP_IDS = [
-    # Example: -100123456789, # Replace with your actual group IDs
-    -4859500151,
-    -1002689980361,
-]
-# --- END NEW ---
+# Add more constants if needed, e.g., default bet amounts, game cool-downs, etc.

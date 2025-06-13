@@ -4,15 +4,15 @@ from datetime import datetime
 import random # For random.randint fallback in dice roll
 import re # Import the 're' module for regex operations
 from typing import Optional # Import Optional for type hinting
+from apscheduler.jobstores.base import JobLookupError # Import JobLookupError for error handling
 
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes # Only ContextTypes is needed here from telegram.ext
 
 # Import necessary components from other modules
 from game_logic import DiceGame, WAITING_FOR_BETS, GAME_CLOSED, GAME_OVER
-# --- UPDATED: Import ALLOWED_GROUP_IDS and get_chat_data_for_id from constants.py ---
 from constants import global_data, HARDCODED_ADMINS, RESULT_EMOJIS, INITIAL_PLAYER_SCORE, ALLOWED_GROUP_IDS, get_chat_data_for_id
-# --- END UPDATED ---
+
 
 # Configure logging for this module (this will be overridden by main.py's config)
 logger = logging.getLogger(__name__)
@@ -163,7 +163,7 @@ async def _start_interactive_game_round(chat_id: int, context: ContextTypes.DEFA
 
     await context.bot.send_message(
         chat_id,
-        f"🔥 *ပွဲစဉ် #{match_id}: လောင်းကြေးတွေ ဖွင့်လိုက်ပါပြီရှင်!* 🔥\n\n" # Feminine, exciting intro
+        f"🔥 *ပွဲစဉ် #{match_id}: လောင်းကြေးတွေ ဖွင့်လိုက်ပါပြီရှင်!* 🔥 \n\n" # Feminine, exciting intro
         "💰 BIG (>7), SMALL (<7), ဒါမှမဟုတ် LUCKY (အတိအကျ 7) တို့ပေါ် လောင်းကြေးထပ်လိုက်ပါနော်။\n" # Feminine instructions
         "ခလုတ်တွေ နှိပ်ပြီး လောင်းမလား (မူရင်း ၁၀၀ မှတ်)! ဒါမှမဟုတ် `big 250`, `s 50`, `lucky100` စသည်ဖြင့် ရိုက်ပြီး လောင်းမလား!?\n"
         "_ပွဲတစ်ပွဲတည်းမှာ မတူညီတဲ့ ရလဒ်တွေပေါ် အကြိမ်ပေါင်းများစွာ လောင်းကြေးထပ်လို့ရတယ်နော်။_ \n\n"
@@ -281,8 +281,8 @@ async def start_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
             num_matches_requested = int(context.args[0])
             if num_matches_requested <= 0:
                 return await update.message.reply_text("❌ ပွဲအရေအတွက်က ဂဏန်းအပြုသဘော (positive integer) ဖြစ်ရမယ်နော်။", parse_mode="Markdown") # Feminine, casual error
-            elif num_matches_requested > 20: 
-                return await update.message.reply_text("❌ တစ်ခါတည်း အန်စာတုံးပွဲ ၂၀ ပွဲအထိပဲ စီစဉ်လို့ရပါသေးတယ်နော်။", parse_mode="Markdown") # Feminine, casual limit
+            elif num_matches_requested > 100: 
+                return await update.message.reply_text("❌ တစ်ခါတည်း အန်စာတုံးပွဲ ၁၀၀ ပွဲအထိပဲ စီစဉ်လို့ရပါသေးတယ်နော်။", parse_mode="Markdown") # Feminine, casual limit
         except ValueError:
             await update.message.reply_text(
                 "ℹ️ `/startdice` အတွက် မှားယွင်းတဲ့ စာရိုက်ပုံလေး ဖြစ်နေတယ်ရှင့်။ တစ်ပွဲတည်းသော အန်စာတုံးပွဲကိုတော့ စတင်ပေးလိုက်ပါမယ်။\n" # Feminine, casual info
@@ -367,7 +367,7 @@ async def close_bets_scheduled(context: ContextTypes.DEFAULT_TYPE):
     # Store the job object for roll and announce
     context.chat_data["roll_and_announce_job"] = context.job_queue.run_once(
         roll_and_announce_scheduled,
-        10, # seconds from now
+        30, # seconds from now
         chat_id=chat_id,
         data=game,
         name=f"roll_announce_{chat_id}_{game.match_id}"
@@ -424,12 +424,12 @@ async def roll_and_announce_scheduled(context: ContextTypes.DEFAULT_TYPE):
         d1, d2 = random.randint(1,6), random.randint(1,6)
 
     game.result = d1 + d2
-    winner_type, multiplier, individual_payouts = game.payout(chat_id)
+    winning_type, multiplier, individual_payouts = game.payout(chat_id)
 
     result_message_text = (
         f"🎉 *ပွဲစဉ် #{game.match_id} ရဲ့ ရလဒ်တွေ ထွက်ပေါ်လာပါပြီရှင့်!* 🎉\n" # Feminine, exciting results
         f"🎲 *အန်စာတုံးလှိမ့်ကြည့်တော့:* *{d1}* + *{d2}* = *{d1 + d2}* ထွက်လာတယ်!\n" 
-        f"🏆 *အနိုင်ရလောင်းကြေးက:* *{winner_type.upper()}* {RESULT_EMOJIS[winner_type]} ပေါ် လောင်းထားသူတွေ *{multiplier} ဆ* ပြန်ရမှာနော်!\n\n" # Feminine, casual payout info
+        f"🏆 *အနိုင်ရလောင်းကြေးက:* *{winning_type.upper()}* {RESULT_EMOJIS[winning_type]} ပေါ် လောင်းထားသူတွေ *{multiplier} ဆ* ပြန်ရမှာနော်!\n\n" # Feminine, casual payout info
         "*ငွေထုတ်ရရှိသူတွေကတော့:*\n" # Feminine, casual title
     )
     
@@ -476,6 +476,53 @@ async def roll_and_announce_scheduled(context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"roll_and_announce_scheduled: 'Results' message sent successfully for match {game.match_id}.")
     except Exception as e:
         logger.error(f"roll_and_announce_scheduled: Error sending 'Results' message for chat {chat_id}: {e}", exc_info=True)
+
+    # --- UPDATED: Idle match logic ---
+    chat_specific_data = get_chat_data_for_id(chat_id)
+    
+    if not game.participants: # No bets were placed in this match
+        chat_specific_data["consecutive_idle_matches"] += 1
+        logger.info(f"No participants in match {game.match_id}. Consecutive idle matches for chat {chat_id}: {chat_specific_data['consecutive_idle_matches']}")
+    else:
+        chat_specific_data["consecutive_idle_matches"] = 0 # Reset if bets were placed
+        logger.info(f"Participants found in match {game.match_id}. Resetting idle counter for chat {chat_id}.")
+
+    if chat_specific_data["consecutive_idle_matches"] >= 3:
+        logger.info(f"Stopping game sequence in chat {chat_id} due to 3 consecutive idle matches.")
+        await context.bot.send_message(
+            chat_id,
+            "😴 *ဂိမ်းရပ်သွားပြီနော်!* 😴\n\n" # Feminine, casual stop
+            "ဆက်တိုက် ၃ ပွဲဆက် ဘယ်သူမှ လောင်းကြေးထပ်တာ မတွေ့ရလို့ ဂိမ်းကို ခဏရပ်လိုက်ပါပြီရှင့်။ အမှတ်တွေ ပြန်လည်မလည်တော့ဘူးနော်။"
+            "ပြန်ကစားချင်ရင် Admin က /startdice နဲ့ ပြန်စပေးနိုင်ပါတယ်ရှင့်။",
+            parse_mode="Markdown"
+        )
+        # Force stop the game: clear game state and pending jobs
+        context.chat_data.pop("game", None)
+        context.chat_data.pop("num_matches_total", None)
+        context.chat_data.pop("current_match_index", None)
+        
+        # Cancel any pending sequence/next game jobs
+        if "next_game_job" in context.chat_data:
+            try:
+                context.chat_data["next_game_job"].schedule_removal()
+            except JobLookupError:
+                logger.warning(f"roll_and_announce_scheduled: JobLookupError for 'next_game_job' during auto-stop for chat {chat_id}.")
+            finally:
+                del context.chat_data["next_game_job"]
+        
+        # Ensure other scheduled jobs related to this specific match are also cleared
+        if "close_bets_job" in context.chat_data:
+            try:
+                context.chat_data["close_bets_job"].schedule_removal()
+            except JobLookupError:
+                logger.warning(f"roll_and_announce_scheduled: JobLookupError for 'close_bets_job' during auto-stop for chat {chat_id}.")
+            finally:
+                del context.chat_data["close_bets_job"]
+        
+        # roll_and_announce_job is already popped at the start of this function.
+        
+        return # Stop further processing for this match, no next game is scheduled
+    # --- END UPDATED ---
 
     if context.chat_data.get("num_matches_total") is not None:
         logger.info(f"roll_and_announce_scheduled: Multi-match sequence active. Scheduling next game in sequence for chat {chat_id}.")
@@ -537,8 +584,15 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     bet_type = data.split("_")[1]
     
-    success, response_message = game.place_bet(user_id, username, bet_type, 100) # Removed chat_id from here
+    success, response_message = game.place_bet(user_id, username, bet_type, 100)
     
+    # --- UPDATED: Reset idle counter on successful bet ---
+    if success:
+        chat_specific_data = get_chat_data_for_id(chat_id)
+        chat_specific_data["consecutive_idle_matches"] = 0 
+        logger.info(f"button_callback: Bet placed by {user_id}, resetting idle counter for chat {chat_id}.")
+    # --- END UPDATED ---
+
     await query.message.reply_text(response_message, parse_mode="Markdown")
     logger.info(f"button_callback: User {user_id} placed bet via button: {bet_type} (100 pts) in chat {chat_id}. Success: {success}")
 
@@ -605,8 +659,15 @@ async def handle_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # This error should ideally be caught by the regex already (digits only)
         return await update.message.reply_text(f"❌ @{username_escaped} ရေ၊ လောင်းကြေးပမာဏက ဂဏန်းဖြစ်ရမှာနော်။", parse_mode="Markdown") # Feminine, casual error
 
-    success, msg = game.place_bet(user_id, username, bet_type, amount) # Removed chat_id from here
+    success, msg = game.place_bet(user_id, username, bet_type, amount)
     
+    # --- UPDATED: Reset idle counter on successful bet ---
+    if success:
+        chat_specific_data = get_chat_data_for_id(chat_id)
+        chat_specific_data["consecutive_idle_matches"] = 0
+        logger.info(f"handle_bet: Bet placed by {user_id}, resetting idle counter for chat {chat_id}.")
+    # --- END UPDATED ---
+
     await update.message.reply_text(msg, parse_mode="Markdown")
     logger.info(f"handle_bet: User {user_id} placed bet: {bet_type} {amount} pts in chat {chat_id}. Success: {success}")
 
@@ -844,7 +905,7 @@ async def adjust_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text(
             "❌ သုံးတဲ့ပုံစံလေး မှားနေတယ်နော်။ ကျေးဇူးပြုပြီး အောက်က ပုံစံတွေထဲက တစ်ခုခုကို သုံးပေးပါ:\n" # Feminine, casual invalid usage
             "  - အသုံးပြုသူရဲ့ မက်ဆေ့ချ်ကို ပြန်ဖြေပြီး: `/adjustscore <ပမာဏ>`\n"
-            "  - တိုက်ရိုက်ရိုက်ထည့်ချင်ရင်: `/adjustscore <user_id> <ပမာဏ>`\n"
+            "  - တိုက်ရိုက်ရိုက်ထည့်ချင်ရင်: `/adjustscore <user_id>`\n"
             "  - Username နဲ့ ရိုက်ထည့်ချင်ရင်: `/adjustscore @username <ပမာဏ>`\n"
             "ဥပမာ- `/adjustscore 123456789 500` ဒါမှမဟုတ် `/adjustscore @someuser 100`။",
             parse_mode="Markdown"
@@ -1050,7 +1111,6 @@ async def refresh_admins(update: Update, context: ContextTypes.DEFAULT_TYPE):
             parse_mode="Markdown"
         )
 
-from apscheduler.jobstores.base import JobLookupError # Import JobLookupError
 
 async def stop_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     """
@@ -1100,11 +1160,6 @@ async def stop_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
         job = context.chat_data.get(job_key)
         if job:
             try:
-                # Use job.id directly with scheduler's remove_job for robustness
-                # If job.removed is True, it means it's already conceptually removed,
-                # but APScheduler might still raise an error if its internal state is
-                # slightly out of sync or if the job was already fully processed.
-                # Wrapping in try-except is the safest way.
                 job.schedule_removal()
                 logger.info(f"stop_game: Canceled job '{job.name}' ({job_key}) for chat {chat_id}.")
             except JobLookupError:
