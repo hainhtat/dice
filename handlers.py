@@ -8,9 +8,10 @@ from typing import Optional # Import Optional for type hinting
 from telegram import Update, InlineKeyboardButton, InlineKeyboardMarkup
 from telegram.ext import ContextTypes # Only ContextTypes is needed here from telegram.ext
 
-# Import necessary components, re-add get_chat_data_for_id
-from game_logic import DiceGame, WAITING_FOR_BETS, GAME_CLOSED, GAME_OVER, get_chat_data_for_id # Re-add get_chat_data_for_id
-from constants import global_data, HARDCODED_ADMINS, RESULT_EMOJIS, INITIAL_PLAYER_SCORE, ALLOWED_GROUP_IDS
+# --- MODIFIED: Import get_chat_data_for_id directly from constants.py ---
+from game_logic import DiceGame, WAITING_FOR_BETS, GAME_CLOSED, GAME_OVER
+from constants import global_data, HARDCODED_ADMINS, RESULT_EMOJIS, INITIAL_PLAYER_SCORE, ALLOWED_GROUP_IDS, get_chat_data_for_id
+# --- END MODIFIED ---
 
 # Configure logging for this module (this will be overridden by main.py's config)
 logger = logging.getLogger(__name__)
@@ -132,11 +133,10 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "  - /adjustscore <user\\_id> <amount>: ကစားသမားတစ်ယောက်ရဲ့ ရမှတ်ကို ထပ်ပေးတာ/နုတ်တာ လုပ်ချင်ရင်။\n"
         "  - /checkscore <user\\_id or @username>: ကစားသမားတစ်ယောက်ရဲ့ ရမှတ်နဲ့ အသေးစိတ်အချက်အလက်တွေ စစ်ချင်ရင်။\n"
         "  - /stop: လက်ရှိဂိမ်းကို ရပ်ပြီး လောင်းထားတဲ့အမှတ်တွေကို ပြန်အမ်းပါ။\n\n" # Added /stop to instructions
-        "ကံတရားက သင့်ဘက်မှာ အမြဲရှိနေပါစေ! 😉",
+        "ကံတရားက သင့်ဘက်မှာ အမြဲရှိနေပါစေ! ?",
         parse_mode="Markdown"
     )
 
-# --- MODIFIED: _start_interactive_game_round now accepts optional update ---
 async def _start_interactive_game_round(context: ContextTypes.DEFAULT_TYPE, update: Optional[Update] = None):
     """
     Helper function to initiate a single interactive game round.
@@ -144,10 +144,10 @@ async def _start_interactive_game_round(context: ContextTypes.DEFAULT_TYPE, upda
     chat_id is now retrieved from context.job.chat_id (if a job) or update.effective_chat.id (if direct handler call).
     """
     chat_id = None
-    if context.job:
-        chat_id = context.job.chat_id
-    elif update and update.effective_chat: # Check if update exists before accessing effective_chat
+    if update: # This means it's a direct command handler call
         chat_id = update.effective_chat.id
+    elif context.job: # This means it's called by the job queue
+        chat_id = context.job.chat_id
     
     if chat_id is None:
         logger.error("Could not determine chat_id in _start_interactive_game_round. Aborting round.")
@@ -159,13 +159,17 @@ async def _start_interactive_game_round(context: ContextTypes.DEFAULT_TYPE, upda
         return
     # --- END Group ID check ---
 
+    # Ensure context.chat_data[chat_id] is a dictionary before adding keys
+    chat_game_state = context.chat_data.setdefault(chat_id, {})
+
     # Match counter from in-memory global_data
-    chat_specific_data = get_chat_data_for_id(chat_id)
-    match_id = chat_specific_data["match_counter"] # Get chat-specific match counter
-    chat_specific_data["match_counter"] += 1 # Increment chat-specific match counter
+    chat_data_global = get_chat_data_for_id(chat_id) # This provides the global chat data like match_counter, player_stats etc.
+    match_id = chat_data_global["match_counter"]
+    chat_data_global["match_counter"] += 1
     
     game = DiceGame(match_id, chat_id)
-    context.chat_data[chat_id] = {"game": game} # Store the game instance in chat-specific data
+    # Corrected: Assign to a key within the existing dictionary, don't overwrite the whole dict
+    chat_game_state["game"] = game 
 
     keyboard = InlineKeyboardMarkup([
         [
@@ -186,7 +190,7 @@ async def _start_interactive_game_round(context: ContextTypes.DEFAULT_TYPE, upda
     )
     logger.info(f"_start_interactive_game_round: Match {match_id} started successfully in chat {chat_id}. Betting open for 60 seconds.")
 
-    # Store the job for potential cancellation
+    # Store the job for potential cancellation in the correct chat_game_state
     close_bets_job = context.job_queue.run_once(
         close_bets_scheduled,
         60, # seconds from now
@@ -194,9 +198,8 @@ async def _start_interactive_game_round(context: ContextTypes.DEFAULT_TYPE, upda
         data=game,
         name=f"close_bets_{chat_id}_{match_id}" # Give job a unique name for cancellation
     )
-    context.chat_data[chat_id]["close_bets_job"] = close_bets_job # Store job for cancellation
+    chat_game_state["close_bets_job"] = close_bets_job # Store job in chat_game_state
     logger.info(f"_start_interactive_game_round: Job for close_bets_scheduled scheduled for match {match_id} in chat {chat_id}.")
-# --- END MODIFIED ---
 
 
 async def _manage_game_sequence(context: ContextTypes.DEFAULT_TYPE):
@@ -227,14 +230,12 @@ async def _manage_game_sequence(context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"_manage_game_sequence: Starting next game in sequence. Match {current_match_index + 1} of {num_matches_total} for chat {chat_id}.")
         chat_specific_context["current_match_index"] += 1
         # Store job for potential cancellation
-        # --- MODIFIED: Calling _start_interactive_game_round with only context ---
         next_game_job = context.job_queue.run_once(
             _start_interactive_game_round,
             2, # Small delay before first game starts
             chat_id=chat_id, # chat_id passed here for the job, _start_interactive_game_round will pick it from context.job
             name=f"start_next_game_{chat_id}_{chat_specific_context['current_match_index']}"
         )
-        # --- END MODIFIED ---
         chat_specific_context["next_game_job"] = next_game_job
         
     else:
@@ -280,24 +281,24 @@ async def start_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"start_dice: Admin list for chat {chat_id} is empty or not loaded. Attempting to update it now.")
         if not await update_group_admins(chat_id, context):
             await update.message.reply_text(
-                "❌ အုပ်စုအုပ်ချုပ်သူစာရင်းကို ရှာမတွေ့လို့ စိတ်မကောင်းပါဘူး။ ကျွန်တော့်ကို 'ချတ်အုပ်ချုပ်သူများကို ရယူရန်' ခွင့်ပြုချက် ပေးထားလား သေချာစစ်ပေးပါဦး။ ပြီးရင် ထပ်ကြိုးစားကြည့်နော်။",
+                "❌ အုပ်စုအုပ်ချုပ်သူစာရင်းကို ရှာမတွေ့လို့ စိတ်မကောင်းပါဘူး။ ကျွန်တော့်ကို 'ချတ်အုပ်ချုပ်သူများကို ရယူရန်' ခွင့်ပြုချက် ပေးထားလား သေချာစစ်ပေးပါဦး။ ပြီးရင် ထပ်ကြိုးစားကြည့်နော်。",
                 parse_mode="Markdown"
             )
             return
 
     if not is_admin(chat_id, user_id):
         logger.warning(f"start_dice: User {user_id} is not an admin and tried to start a game in chat {chat_id}.")
-        return await update.message.reply_text("❌ Admin တွေပဲ အန်စာတုံးဂိမ်းအသစ်ကို စတင်လို့ရပါတယ်နော်။", parse_mode="Markdown")
+        return await update.message.reply_text("❌ Admin တွေပဲ အန်စာတုံးဂိမ်းအသစ်ကို စတင်လို့ရပါတယ်နော်。", parse_mode="Markdown")
 
     # Access game state from context.chat_data[chat_id]
     chat_specific_context = context.chat_data.setdefault(chat_id, {})
     current_game = chat_specific_context.get("game")
     if current_game and current_game.state != GAME_OVER:
         logger.warning(f"start_dice: Game already active in chat {chat_id}. State: {current_game.state}")
-        return await update.message.reply_text("⚠️ ဟေ့! ဂိမ်းတစ်ခု စနေပြီနော်။ ပြီးအောင်စောင့်ပေးပါဦး ဒါမှမဟုတ် လက်ရှိပွဲပြီးအောင်စောင့်ပေးပါနော်။", parse_mode="Markdown")
+        return await update.message.reply_text("⚠️ ဟေ့! ဂိမ်းတစ်ခု စနေပြီနော်။ ပြီးအောင်စောင့်ပေးပါဦး ဒါမှမဟုတ် လက်ရှိပွဲပြီးအောင်စောင့်ပေးပါနော်。", parse_mode="Markdown")
     
     if chat_specific_context.get("num_matches_total") is not None:
-         return await update.message.reply_text("⚠️ ပွဲစဉ်တွေ ဆက်တိုက်စတင်ထားပြီးသားနော်။ ပြီးဆုံးအောင်စောင့်ပေးပါဦး။", parse_mode="Markdown")
+         return await update.message.reply_text("⚠️ ပွဲစဉ်တွေ ဆက်တိုက်စတင်ထားပြီးသားနော်။ ပြီးဆုံးအောင်စောင့်ပေးပါဦး。", parse_mode="Markdown")
 
 
     num_matches_requested = 1
@@ -306,9 +307,9 @@ async def start_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         try:
             num_matches_requested = int(context.args[0])
             if num_matches_requested <= 0:
-                return await update.message.reply_text("❌ ပွဲအရေအတွက်က အပေါင်းကိန်းပြည့် (positive integer) ဖြစ်ရပါမယ်နော်။", parse_mode="Markdown")
+                return await update.message.reply_text("❌ ပွဲအရေအတွက်က အပေါင်းကိန်းပြည့် (positive integer) ဖြစ်ရပါမယ်နော်。", parse_mode="Markdown")
             elif num_matches_requested > 20: 
-                return await update.message.reply_text("❌ တစ်ကြိမ်တည်းမှာ ဆက်တိုက်အန်စာတုံးပွဲ အပွဲ ၂၀ အထိပဲ စီစဉ်လို့ရပါတယ်။ ဒီထက်ပိုရင် နောက်မှ ဆက်ခေါ်လိုက်နော်။", parse_mode="Markdown")
+                return await update.message.reply_text("❌ တစ်ကြိမ်တည်းမှာ ဆက်တိုက်အန်စာတုံးပွဲ အပွဲ ၂၀ အထိပဲ စီစဉ်လို့ရပါတယ်။ ဒီထက်ပိုရင် နောက်မှ ဆက်ခေါ်လိုက်နော်。", parse_mode="Markdown")
         except ValueError:
             await update.message.reply_text(
                 "ℹ️ `/startdice` အတွက် မှားယွင်းတဲ့ ကိန်းဂဏန်းပါ။ စိတ်မပူပါနဲ့၊ တစ်ပွဲတည်း အန်စာတုံးပွဲ စတင်ပေးပါမယ်နော်。\n"
@@ -324,7 +325,7 @@ async def start_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_specific_context["current_match_index"] = 0
 
         await update.message.reply_text(
-            f"🎮 ကဲ... *{num_matches_requested}* ပွဲ ဆက်တိုက် အန်စာတုံး လောင်းကြေးပွဲတွေ စတင်တော့မယ်! ပထမဆုံးပွဲအတွက် အဆင်သင့်ပြင်ထားလိုက်တော့နော်။",
+            f"🎮 ကဲ... *{num_matches_requested}* ပွဲ ဆက်တိုက် အန်စာတုံး လောင်းကြေးပွဲတွေ စတင်တော့မယ်! ပထမဆုံးပွဲအတွက် အဆင်သင့်ပြင်ထားလိုက်တော့နော်。",
             parse_mode="Markdown"
         )
         # Store job for potential cancellation
@@ -336,9 +337,7 @@ async def start_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         chat_specific_context["sequence_job"] = sequence_job # Store the initial job
     else:
-        # --- MODIFIED: Call _start_interactive_game_round with update and context ---
         await _start_interactive_game_round(context, update=update)
-        # --- END MODIFIED ---
 
 
 async def close_bets_scheduled(context: ContextTypes.DEFAULT_TYPE):
@@ -357,7 +356,7 @@ async def close_bets_scheduled(context: ContextTypes.DEFAULT_TYPE):
     # Access game instance from context.chat_data[chat_id]
     chat_specific_context = context.chat_data.get(chat_id, {})
     current_game_in_context = chat_specific_context.get("game")
-    if current_game_in_context is None or current_game_in_context != game:
+    if current_game_in_context is None or current_game_in_context != game and game.state != GAME_CLOSED:
         logger.warning(f"close_bets_scheduled: Skipping action for match {game.match_id} in chat {chat_id} as game instance changed or no game. Current game: {current_game_in_context.match_id if current_game_in_context else 'None'}.")
         return
 
@@ -382,7 +381,7 @@ async def close_bets_scheduled(context: ContextTypes.DEFAULT_TYPE):
                 bet_summary_lines.append(f"    → @{username_display}: *{amount}* မှတ်")
     
     if not has_bets:
-        bet_summary_lines.append("  ဒီပွဲမှာ ဘယ်သူမှ မလောင်းထားဘူးဗျို့")
+        bet_summary_lines.append("  ဒီပွဲမှာ ဘယ်သူမှ မလောင်းထားဘူးဗျို့။ အသည်းအသန်ပဲ!")
 
     bet_summary_lines.append("\nကဲ... အန်စာတုံးလေးတွေ လှိမ့်လိုက်တော့မယ်! 💥")
     
@@ -393,7 +392,7 @@ async def close_bets_scheduled(context: ContextTypes.DEFAULT_TYPE):
     except Exception as e:
         logger.error(f"close_bets_scheduled: Error sending 'Bets closed' message for chat {chat_id}: {e}", exc_info=True)
 
-    # Store the job for potential cancellation
+    # Store the job for potential cancellation in the correct chat_game_state
     roll_and_announce_job = context.job_queue.run_once(
         roll_and_announce_scheduled,
         10, # seconds from now
@@ -401,7 +400,7 @@ async def close_bets_scheduled(context: ContextTypes.DEFAULT_TYPE):
         data=game,
         name=f"roll_and_announce_{chat_id}_{game.match_id}" # Give job a unique name for cancellation
     )
-    context.chat_data[chat_id]["roll_and_announce_job"] = roll_and_announce_job # Store job for cancellation
+    chat_specific_context["roll_and_announce_job"] = roll_and_announce_job # Store job in chat_game_state
     logger.info(f"close_bets_scheduled: Job for roll_and_announce_scheduled set for 10 seconds for match {game.match_id} in chat {chat_id}.")
     logger.info(f"close_bets_scheduled: Function finished for match {game.match_id} in chat {chat_id}.")
 
@@ -422,7 +421,7 @@ async def roll_and_announce_scheduled(context: ContextTypes.DEFAULT_TYPE):
     # Access game instance from context.chat_data[chat_id]
     chat_specific_context = context.chat_data.get(chat_id, {})
     current_game_in_context = chat_specific_context.get("game")
-    if current_game_in_context is not None and current_game_in_context != game and game.state != GAME_CLOSED:
+    if current_game_in_context is None or current_game_in_context != game and game.state != GAME_CLOSED:
          logger.warning(f"roll_and_announce_scheduled: Skipping action for match {game.match_id} in chat {chat_id} due to invalid state or game instance change. Current game: {current_game_in_context.match_id if current_game_in_context else 'None'}, Game state: {game.state}.")
          return
     if game.state == GAME_OVER:
@@ -514,14 +513,12 @@ async def roll_and_announce_scheduled(context: ContextTypes.DEFAULT_TYPE):
     if chat_specific_context.get("num_matches_total") is not None:
         logger.info(f"roll_and_announce_scheduled: Multi-match sequence active. Scheduling next game in sequence for chat {chat_id}.")
         # Store job for potential cancellation
-        # --- MODIFIED: Calling _start_interactive_game_round with only context ---
         next_sequence_job = context.job_queue.run_once(
             _start_interactive_game_round,
             5, # 5-second delay before starting the next game
             chat_id=chat_id, # chat_id passed here for the job, _start_interactive_game_round will pick it from context.job
             name=f"manage_sequence_{chat_id}_{chat_specific_context.get('current_match_index', 'final')}"
         )
-        # --- END MODIFIED ---
         chat_specific_context["sequence_job"] = next_sequence_job # Update sequence job reference
     else:
         if "game" in chat_specific_context:
@@ -576,7 +573,7 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
     bet_type = data.split("_")[1]
     
     # Call synchronous place_bet on game instance WITHOUT chat_id
-    success, response_message = game.place_bet(user_id, username, bet_type, 100) # Removed chat_id
+    success, response_message = game.place_bet(user_id, username, bet_type, 100)
     
     await query.message.reply_text(response_message, parse_mode="Markdown")
     logger.info(f"button_callback: User {user_id} placed bet via button: {bet_type} (100 pts) in chat {chat_id}. Success: {success}")
@@ -648,7 +645,7 @@ async def handle_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return await update.message.reply_text(f"❌ @{username_escaped} ရေ၊ လောင်းကြေးပမာဏက ဂဏန်းဖြစ်ရပါမယ်ဗျို့。", parse_mode="Markdown")
 
     # Call synchronous place_bet on game instance WITHOUT chat_id
-    success, msg = game.place_bet(user_id, username, bet_type, amount) # Removed chat_id
+    success, msg = game.place_bet(user_id, username, bet_type, amount)
     
     await update.message.reply_text(msg, parse_mode="Markdown")
     logger.info(f"handle_bet: User {user_id} placed bet: {bet_type} {amount} pts in chat {chat_id}. Success: {success}")
@@ -1065,7 +1062,7 @@ async def check_user_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
     username_display_escaped = target_username_display.replace('_', '\\_').replace('*', '\\*').replace('[', '\\[').replace('`', '\\`')
 
     await update.message.reply_text(
-        f"👤 *@{username_display_escaped}* ရဲ့ ဂိမ်းစာရင်းအင်း အစုံအလင် (အိုင်ဒီ: `{target_user_id}`):\n"
+        f"� *@{username_display_escaped}* ရဲ့ ဂိမ်းစာရင်းအင်း အစုံအလင် (အိုင်ဒီ: `{target_user_id}`):\n"
         f"  လက်ရှိရမှတ်: *{player_stats['score']}*\n"
         f"  စုစုပေါင်း ကစားခဲ့တဲ့ပွဲ: *{total_games}* ပွဲ\n" 
         f"  ✅ အနိုင်ရမှု: *{player_stats['wins']}* ပွဲ\n" 
@@ -1184,7 +1181,7 @@ async def stop_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if "next_game_job" in chat_specific_context: del chat_specific_context["next_game_job"]
 
 
-    refund_message = f"🛑 *ပွဲစဉ် #{current_game.match_id} ကို ရပ်တန့်လိုက်ပါပြီဗျို့!* 🛑\n\n"
+    refund_message = f"🛑 *ပွဲစဉ် #{current_game.match_id} ကို 🥺!* 🛑\n\n"
     if refunded_players_info:
         refund_message += "*လောင်းကြေးတွေ အားလုံး ပြန်အမ်းပေးလိုက်ပါပြီနော်:*\n"
         refund_message += "\n".join(refunded_players_info)
@@ -1194,4 +1191,3 @@ async def stop_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(refund_message, parse_mode="Markdown")
     logger.info(f"stop_game: Match {current_game.match_id} successfully stopped and bets refunded in chat {chat_id}.")
-
