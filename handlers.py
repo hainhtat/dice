@@ -80,7 +80,7 @@ async def on_chat_member_update(update: Update, context: ContextTypes.DEFAULT_TY
             else:
                 await context.bot.send_message(
                     chat_id,
-                    "👋 ဟိုင်း! ကျွန်တော်က အန်စာတုံးဂိမ်းဘော့တ်ပါ။ 😔 အုပ်ချုပ်သူစာရင်းကို ရှာမတွေ့လို့ စိတ်မကောင်းပါ။ 'ချတ်အုပ်ချုပ်သူများကို ရယူရန်' ခွင့်ပြုချက် ပေးထားလား သေချာစစ်ပေးပါဦး။",
+                    "� ဟိုင်း! ကျွန်တော်က အန်စာတုံးဂိမ်းဘော့တ်ပါ။ 😔 အုပ်ချုပ်သူစာရင်းကို ရှာမတွေ့လို့ စိတ်မကောင်းပါ။ 'ချတ်အုပ်ချုပ်သူများကို ရယူရန်' ခွင့်ပြုချက် ပေးထားလား သေချာစစ်ပေးပါဦး။",
                     parse_mode="Markdown"
                 )
         elif new_status == "left":
@@ -135,14 +135,13 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         parse_mode="Markdown"
     )
 
-# --- FIXED: _start_interactive_game_round now accepts only context ---
-async def _start_interactive_game_round(context: ContextTypes.DEFAULT_TYPE):
+# --- MODIFIED: _start_interactive_game_round now accepts chat_id directly ---
+async def _start_interactive_game_round(context: ContextTypes.DEFAULT_TYPE, chat_id: int):
     """
     Helper function to initiate a single interactive game round.
     This logic is extracted to be reusable for both single /startdice and sequential games.
-    chat_id is now accessed via context.job.chat_id.
+    chat_id is now explicitly passed or derived from context.job.chat_id.
     """
-    chat_id = context.job.chat_id # Get chat_id from the job context
     # --- Group ID check ---
     if chat_id not in ALLOWED_GROUP_IDS:
         logger.info(f"_start_interactive_game_round: Ignoring action from disallowed chat ID: {chat_id}")
@@ -186,7 +185,7 @@ async def _start_interactive_game_round(context: ContextTypes.DEFAULT_TYPE):
     )
     context.chat_data[chat_id]["close_bets_job"] = close_bets_job # Store job for cancellation
     logger.info(f"_start_interactive_game_round: Job for close_bets_scheduled scheduled for match {match_id} in chat {chat_id}.")
-# --- END FIXED ---
+# --- END MODIFIED ---
 
 
 async def _manage_game_sequence(context: ContextTypes.DEFAULT_TYPE):
@@ -217,14 +216,18 @@ async def _manage_game_sequence(context: ContextTypes.DEFAULT_TYPE):
         logger.info(f"_manage_game_sequence: Starting next game in sequence. Match {current_match_index + 1} of {num_matches_total} for chat {chat_id}.")
         chat_specific_context["current_match_index"] += 1
         # Store job for potential cancellation
-        # --- FIXED: Passed chat_id directly to run_once, _start_interactive_game_round now extracts it from context.job ---
+        # --- MODIFIED: Pass chat_id explicitly to _start_interactive_game_round ---
         next_game_job = context.job_queue.run_once(
             _start_interactive_game_round,
             2, # Small delay before first game starts
             chat_id=chat_id, # chat_id passed here for the job
+            # The 'data' argument for run_once is usually the second positional argument for the callback,
+            # but since we changed _start_interactive_game_round to accept chat_id directly,
+            # we need to ensure chat_id is correctly routed.
+            # No 'data' argument needed for _start_interactive_game_round
             name=f"start_next_game_{chat_id}_{chat_specific_context['current_match_index']}"
         )
-        # --- END FIXED ---
+        # --- END MODIFIED ---
         chat_specific_context["next_game_job"] = next_game_job
         
     else:
@@ -314,7 +317,7 @@ async def start_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         chat_specific_context["current_match_index"] = 0
 
         await update.message.reply_text(
-            f"� ကဲ... *{num_matches_requested}* ပွဲ ဆက်တိုက် အန်စာတုံး လောင်းကြေးပွဲတွေ စတင်တော့မယ်! ပထမဆုံးပွဲအတွက် အဆင်သင့်ပြင်ထားလိုက်တော့နော်။",
+            f"🎮 ကဲ... *{num_matches_requested}* ပွဲ ဆက်တိုက် အန်စာတုံး လောင်းကြေးပွဲတွေ စတင်တော့မယ်! ပထမဆုံးပွဲအတွက် အဆင်သင့်ပြင်ထားလိုက်တော့နော်။",
             parse_mode="Markdown"
         )
         # Store job for potential cancellation
@@ -326,8 +329,8 @@ async def start_dice(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
         chat_specific_context["sequence_job"] = sequence_job # Store the initial job
     else:
-        # --- FIXED: Call _start_interactive_game_round without chat_id argument ---
-        await _start_interactive_game_round(context) # Pass only context
+        # --- FIXED: Call _start_interactive_game_round with chat_id argument ---
+        await _start_interactive_game_round(context, chat_id) # Pass context and chat_id
         # --- END FIXED ---
 
 
@@ -391,8 +394,8 @@ async def close_bets_scheduled(context: ContextTypes.DEFAULT_TYPE):
         data=game,
         name=f"roll_and_announce_{chat_id}_{game.match_id}" # Give job a unique name for cancellation
     )
-    chat_specific_context["roll_and_announce_job"] = roll_and_announce_job # Store job for cancellation
-    logger.info(f"close_bets_scheduled: Job for roll_and_announce_scheduled set for 30 seconds for match {game.match_id} in chat {chat_id}.")
+    context.chat_data[chat_id]["roll_and_announce_job"] = roll_and_announce_job # Store job for cancellation
+    logger.info(f"close_bets_scheduled: Job for roll_and_announce_scheduled set for 10 seconds for match {game.match_id} in chat {chat_id}.")
     logger.info(f"close_bets_scheduled: Function finished for match {game.match_id} in chat {chat_id}.")
 
 
@@ -504,12 +507,14 @@ async def roll_and_announce_scheduled(context: ContextTypes.DEFAULT_TYPE):
     if chat_specific_context.get("num_matches_total") is not None:
         logger.info(f"roll_and_announce_scheduled: Multi-match sequence active. Scheduling next game in sequence for chat {chat_id}.")
         # Store job for potential cancellation
+        # --- MODIFIED: Pass chat_id explicitly to _start_interactive_game_round for scheduled call ---
         next_sequence_job = context.job_queue.run_once(
-            _manage_game_sequence,
+            _start_interactive_game_round,
             5, # 5-second delay before starting the next game
-            chat_id=chat_id,
+            chat_id=chat_id, # chat_id passed here for the job
             name=f"manage_sequence_{chat_id}_{chat_specific_context.get('current_match_index', 'final')}"
         )
+        # --- END MODIFIED ---
         chat_specific_context["sequence_job"] = next_sequence_job # Update sequence job reference
     else:
         if "game" in chat_specific_context:
@@ -1056,9 +1061,9 @@ async def check_user_score(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"👤 *@{username_display_escaped}* ရဲ့ ဂိမ်းစာရင်းအင်း အစုံအလင် (အိုင်ဒီ: `{target_user_id}`):\n"
         f"  လက်ရှိရမှတ်: *{player_stats['score']}*\n"
         f"  စုစုပေါင်း ကစားခဲ့တဲ့ပွဲ: *{total_games}* ပွဲ\n"
-        f"  ✅ အနိုင်ရမှု: *{player_stats['wins']}* ပွဲ\n"
-        f"  ❌ ရှုံးနိမ့်မှု: *{player_stats['losses']}* ပွဲ\n"
-        f"  နိုင်တဲ့နှုန်းထား: *{win_rate:.1f}%*\n"
+        f"  ✅ အနိုင်ရမှု: *{player_stats['wins']}* ပွဲ\n" 
+        f"  ❌ ရှုံးနိမ့်မှု: *{player_stats['losses']}* ပွဲ\n" 
+        f"  နိုင်တဲ့နှုန်းထား: *{win_rate:.1f}%*\n" 
         f"  နောက်ဆုံးလှုပ်ရှားခဲ့တဲ့အချိန်: *{player_stats['last_active'].strftime('%Y-%m-%d %H:%M')}*",
         parse_mode="Markdown"
     )
