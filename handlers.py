@@ -110,7 +110,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     logger.info(f"start: Received /start command from user {user_id} in chat {chat_id}")
 
     await update.message.reply_text(
-        "🌟🎲 *Rangoon Dice Showdown မှ ကြိုဆိုပါတယ်ဗျို့!* 🎉🌟\n\n"
+        "🌟🎲 *Rangoon Dice Showdown မှ ကြိုဆိုပါတယ်ဗျို့!* �🌟\n\n"
         "ကဲ... ဘယ်သူ့ကံက အသားဆုံးလဲ စိန်ခေါ်လိုက်ရအောင်! ကစားနည်းလေးကတော့:\n\n"
         "✨ *ဂိမ်းစည်းမျဉ်းတွေ* က ရိုးရှင်းပါတယ်။ အန်စာတုံး ၂ လုံးလှိမ့်ပြီး ပေါင်းလဒ်ကို ခန့်မှန်းရုံပဲ!\n"
         "  - *BIG* 🔼: ၇ ထက်ကြီးရင် (၂ ဆ ပြန်ရမယ်နော်!)\n"
@@ -378,7 +378,7 @@ async def close_bets_scheduled(context: ContextTypes.DEFAULT_TYPE):
     # Store the job for potential cancellation
     roll_and_announce_job = context.job_queue.run_once(
         roll_and_announce_scheduled,
-        30, # seconds from now
+        15, # seconds from now
         chat_id=chat_id,
         data=game,
         name=f"roll_and_announce_{chat_id}_{game.match_id}" # Give job a unique name for cancellation
@@ -555,9 +555,8 @@ async def button_callback(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     bet_type = data.split("_")[1]
     
-    # --- FIXED: Call synchronous place_bet on game instance WITHOUT chat_id ---
+    # Call synchronous place_bet on game instance WITHOUT chat_id
     success, response_message = game.place_bet(user_id, username, bet_type, 100) # Removed chat_id
-    # --- END FIXED ---
     
     await query.message.reply_text(response_message, parse_mode="Markdown")
     logger.info(f"button_callback: User {user_id} placed bet via button: {bet_type} (100 pts) in chat {chat_id}. Success: {success}")
@@ -628,9 +627,8 @@ async def handle_bet(update: Update, context: ContextTypes.DEFAULT_TYPE):
         # This error should ideally be caught by the regex already (digits only)
         return await update.message.reply_text(f"❌ @{username_escaped} ရေ၊ လောင်းကြေးပမာဏက ဂဏန်းဖြစ်ရပါမယ်ဗျို့။", parse_mode="Markdown")
 
-    # --- FIXED: Call synchronous place_bet on game instance WITHOUT chat_id ---
+    # Call synchronous place_bet on game instance WITHOUT chat_id
     success, msg = game.place_bet(user_id, username, bet_type, amount) # Removed chat_id
-    # --- END FIXED ---
     
     await update.message.reply_text(msg, parse_mode="Markdown")
     logger.info(f"handle_bet: User {user_id} placed bet: {bet_type} {amount} pts in chat {chat_id}. Success: {success}")
@@ -1123,9 +1121,11 @@ async def stop_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
     ]
     
     for job in jobs_to_cancel:
-        if job and job.running: # Check if job exists and is still running
+        # --- FIXED: Changed job.running to job and not job.removed ---
+        if job and not job.removed: # Check if job exists and has not been removed yet
             job.schedule_removal()
             logger.info(f"stop_game: Canceled job '{job.name}' for chat {chat_id}.")
+        # --- END FIXED ---
 
     refunded_players_info = []
     player_stats_for_chat = get_chat_data_for_id(chat_id)["player_stats"]
@@ -1175,4 +1175,3 @@ async def stop_game(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     await update.message.reply_text(refund_message, parse_mode="Markdown")
     logger.info(f"stop_game: Match {current_game.match_id} successfully stopped and bets refunded in chat {chat_id}.")
-
