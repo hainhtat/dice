@@ -11,24 +11,6 @@ from constants import global_data, RESULT_EMOJIS, INITIAL_PLAYER_SCORE
 # Game states
 WAITING_FOR_BETS, GAME_CLOSED, GAME_OVER = range(3)
 
-# Helper function to get or initialize chat-specific data (NOW RE-ENABLED for in-memory)
-def get_chat_data_for_id(chat_id):
-    """
-    Ensures the data structure for a given chat_id exists within global_data['all_chat_data']
-    and returns a reference to it.
-    """
-    chat_specific_data = global_data["all_chat_data"].setdefault(chat_id, {
-        "match_counter": 1, # Initialize per-chat match counter here
-        "player_stats": {},
-        "match_history": [],
-        "group_admins": []
-    })
-    # Ensure player_stats and match_history keys exist if they are not there
-    chat_specific_data.setdefault("player_stats", {})
-    chat_specific_data.setdefault("match_history", [])
-    chat_specific_data.setdefault("group_admins", []) # Ensure group_admins is always a list
-    return chat_specific_data
-
 class DiceGame:
     """
     Represents a single instance of the dice game.
@@ -45,19 +27,15 @@ class DiceGame:
         self.participants = set() # Set of user_ids who have placed at least one bet in this match
         logger.info(f"DiceGame __init__: Match {self.match_id} started in chat {self.chat_id}")
 
-    # --- UPDATED: Removed chat_id from place_bet arguments ---
-    def place_bet(self, user_id, username, bet_type, amount): 
+    def place_bet(self, user_id, username, bet_type, amount): # Removed chat_id from arguments
         """
         Allows a user to place a bet on a specific bet type.
-        Uses self.chat_id to access chat-specific data.
         Users can now place multiple bets on different types, or add to existing bets.
         """
-        # Use self.chat_id directly as it's already available in the instance
-        chat_specific_data = get_chat_data_for_id(self.chat_id) 
-        player_stats = chat_specific_data["player_stats"] # Access player_stats from chat_specific_data
-
+        # Ensure player_stats exists for the specific chat using self.chat_id
+        stats = global_data["player_stats"].setdefault(self.chat_id, {})
         # Ensure player entry exists for the user; initialize with default score if new
-        player = player_stats.setdefault(user_id, {
+        player = stats.setdefault(user_id, {
             "username": username,
             "score": INITIAL_PLAYER_SCORE, # Use INITIAL_PLAYER_SCORE
             "wins": 0,
@@ -99,7 +77,6 @@ class DiceGame:
             f"Your total bet on *{bet_type.upper()}*: *{self.bets[bet_type][user_id]}* points.\n"
             f"Your current score: *{player['score']}*."
         )
-    # --- END UPDATED ---
 
     def determine_winner(self):
         """Determines the winning bet type based on the dice roll result."""
@@ -119,8 +96,7 @@ class DiceGame:
         winning_bets = self.bets.get(winner_type, {}) # Get bets for the winning type
         multiplier = 5 if winner_type == "lucky" else 2 # Payout multiplier
 
-        stats = get_chat_data_for_id(chat_id)["player_stats"] # Get player stats for the chat
-        match_history = get_chat_data_for_id(chat_id)["match_history"] # Get match_history for the chat
+        stats = global_data["player_stats"].get(chat_id, {}) # Get player stats for the chat
 
         # Check if any bets were placed at all in this specific game instance
         any_bets_placed = any(bool(bet_type_dict) for bet_type_dict in self.bets.values())
@@ -130,7 +106,7 @@ class DiceGame:
             # we just record the match history and don't process player scores.
             logger.info(f"payout: No bets placed for match {self.match_id} in chat {chat_id}. Skipping score adjustments for players.")
             # Record match details in history, but with no participants if no one actually bet
-            match_history.append({
+            global_data["match_history"].setdefault(chat_id, []).append({
                 "match_id": self.match_id,
                 "result": self.result,
                 "winner": winner_type,
@@ -177,7 +153,7 @@ class DiceGame:
 
 
         # Record match details in history
-        match_history.append({
+        global_data["match_history"].setdefault(chat_id, []).append({
             "match_id": self.match_id,
             "result": self.result,
             "winner": winner_type,
