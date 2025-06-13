@@ -55,5 +55,6 @@ RESULT_EMOJIS = {
 ALLOWED_GROUP_IDS = [
     # Example: -100123456789, # Replace with your actual group IDs
     -4859500151,
+    -1002689980361,
 ]
 # --- END NEW ---
