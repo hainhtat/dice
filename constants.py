@@ -42,25 +42,22 @@ HARDCODED_ADMINS = [
     1599213796,
     1846599182, # My user ID for testing
 ]
+# Filter out None values and ensure they are integers in case env vars are not set or are invalid
+HARDCODED_ADMINS = [int(x) for x in HARDCODED_ADMINS if isinstance(x, str) and x.isdigit() or isinstance(x, int)]
 
-# --- NEW: Define a list of allowed group IDs in constants.py ---
+
+# Define a list of allowed group IDs
 # IMPORTANT: Replace these with the actual chat IDs of your specific groups.
-# You can get a group's chat ID by adding the bot to the group and
-# then using a command like /myid (if you implement it temporarily in handlers.py)
-# or by checking the bot's logs when it receives a message from that group.
-# Group chat IDs are typically negative numbers.
 ALLOWED_GROUP_IDS = [
-    -4859500151,
-    -1002689980361, # This is an example group ID, REPLACE WITH YOUR ACTUAL GROUP ID
+    -4859500151, # This is an example group ID, REPLACE WITH YOUR ACTUAL GROUP ID
     # -1009876543210,  # Example Group ID 2
     # Add more group IDs as needed
 ]
-# --- END NEW ---
 
 
 # Emojis for dice game results
 RESULT_EMOJIS = {
-    "big": "⬆️",
-    "small": "⬇️",
-    "lucky": "💎"
+    "big": "🔼",
+    "small": "�",
+    "lucky": "🍀"
 }

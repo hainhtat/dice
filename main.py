@@ -1,7 +1,7 @@
 import logging
-import asyncio # Re-added asyncio for sleep
+import asyncio # Re-added asyncio for sleep (still needed for context.job_queue functions)
 import re # Added for more flexible regex matching
-import os # NEW: Import the os module to access environment variables
+import os # Added for environment variable access
 
 from telegram.ext import (
     ApplicationBuilder, CommandHandler, MessageHandler,
@@ -10,8 +10,9 @@ from telegram.ext import (
 from telegram import Update # Import Update for type hinting in handlers
 
 # Import handlers and constants from local files
-from handlers import start, start_dice, close_bets_scheduled, roll_and_announce_scheduled, button_callback, handle_bet, show_score, show_stats, leaderboard, history, adjust_score, check_user_score, on_chat_member_update, refresh_admins
-from constants import global_data, HARDCODED_ADMINS, INITIAL_PLAYER_SCORE, ALLOWED_GROUP_IDS # Import ALLOWED_GROUP_IDS from constants
+from handlers import start, start_dice, close_bets_scheduled, roll_and_announce_scheduled, button_callback, handle_bet, show_score, show_stats, leaderboard, history, adjust_score, check_user_score, on_chat_member_update, refresh_admins, stop_game # Added stop_game
+from constants import global_data, HARDCODED_ADMINS, INITIAL_PLAYER_SCORE, ALLOWED_GROUP_IDS
+# --- END REVERTED ---
 
 # Configure logging
 logging.basicConfig(
@@ -20,25 +21,32 @@ logging.basicConfig(
 )
 logger = logging.getLogger(__name__)
 
+# Handler for unhandled text messages (if it was present in your previous main.py)
+async def unhandled_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Logs all text messages that are not handled by other specific handlers."""
+    if update.message and update.message.text:
+        logger.debug(f"Unhandled text message received: '{update.message.text}' from user {update.effective_user.id} in chat {update.effective_chat.id}")
+
 
 def main():
     """
     The main function that sets up and runs the Telegram bot.
     Initializes the Application and registers all handlers.
     """
-    # --- UPDATED: Retrieve bot token from environment variable ---
-    # It's crucial for security not to hardcode your bot token in the code.
-    # We will set the TELEGRAM_BOT_TOKEN environment variable on the hosting platform.
+    # --- REVERTED: Removed Firebase Initialization code ---
+    # Firebase initialization is currently paused.
+    # The bot will now use in-memory data storage as before.
+    # --- END REVERTED ---
+
     bot_token = os.environ.get("TELEGRAM_BOT_TOKEN")
     if not bot_token:
         logger.error("main: TELEGRAM_BOT_TOKEN environment variable not set!")
         raise ValueError("Bot token is not set. Please set the TELEGRAM_BOT_TOKEN environment variable.")
     
+    # Initialize the Application with your bot token.
     application = ApplicationBuilder().token(bot_token).build()
-    # --- END UPDATED ---
     
-    # Register command handlers.
-    # Filters are now handled internally within each handler function in handlers.py.
+    # Register command handlers
     application.add_handler(CommandHandler("start", start))
     application.add_handler(CommandHandler("startdice", start_dice))
     application.add_handler(CommandHandler("score", show_score))
@@ -48,21 +56,24 @@ def main():
     application.add_handler(CommandHandler("adjustscore", adjust_score))
     application.add_handler(CommandHandler("checkscore", check_user_score))
     application.add_handler(CommandHandler("refreshadmins", refresh_admins))
+    application.add_handler(CommandHandler("stop", stop_game)) # NEW: Added stop_game command handler
 
-    # Register callback query handler for inline keyboard buttons (betting buttons).
-    # Filters are now handled internally within button_callback function.
+    # Register callback query handler for inline keyboard buttons (betting buttons)
     application.add_handler(CallbackQueryHandler(button_callback))
     
     # Register message handler for text-based bets.
-    # This regex is specifically for single bet commands to avoid being chatty.
+    # We now filter for messages that match the bet regex
     bet_regex_pattern = re.compile(r"^(big|b|small|s|lucky|l)\s*(\d+)$", re.IGNORECASE)
     application.add_handler(MessageHandler(filters.Regex(bet_regex_pattern) & filters.TEXT, handle_bet))
 
+    # Add a fallback handler for any text messages that are not commands or specific bets
+    application.add_handler(MessageHandler(
+        filters.TEXT & ~filters.COMMAND & ~filters.Regex(bet_regex_pattern), # Ensure it doesn't catch bets
+        unhandled_message
+    ))
 
-    # Register ChatMemberHandler.
-    # This handler typically handles updates for the bot itself (e.g., being added/removed from groups).
-    # The group filtering is applied *inside* on_chat_member_update if you want to restrict
-    # its response to allowed groups, or removed if you want it to acknowledge all joins/leaves.
+    # Register ChatMemberHandler to detect when the bot joins/leaves a chat
+    # or when its permissions change, allowing it to update admin lists.
     application.add_handler(ChatMemberHandler(on_chat_member_update, ChatMemberHandler.CHAT_MEMBER))
 
     logger.info("main: Dice Game Bot started polling...")
